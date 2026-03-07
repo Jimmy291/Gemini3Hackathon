@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity } from 'lucide-react';
+import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 // ------------------------------------------------------------------
@@ -74,6 +74,34 @@ function TypewriterText({ text, speed = 20 }) {
   return <span className="typing-cursor font-mono tracking-tight">{displayed}</span>;
 }
 
+// ------------------------------------------------------------------
+// AR Directional Overlay Component
+// ------------------------------------------------------------------
+function ARDirectionOverlay({ direction }) {
+  if (!direction || direction === 'NONE') return null;
+
+  const arrowProps = {
+    className: "w-48 h-48 text-[#3898ec] animate-[pulse_1s_ease-in-out_infinite] drop-shadow-[0_0_25px_rgba(56,152,236,0.8)]",
+    strokeWidth: 1.5
+  };
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none mix-blend-screen">
+      <div className="flex flex-col items-center justify-center gap-4 bg-black/20 backdrop-blur-md p-10 rounded-full border border-[#3898ec]/20 shadow-[0_0_50px_rgba(56,152,236,0.15)]">
+        {direction === 'FORWARD' && <ChevronsUp {...arrowProps} />}
+        {direction === 'LEFT' && <ChevronsLeft {...arrowProps} />}
+        {direction === 'RIGHT' && <ChevronsRight {...arrowProps} />}
+        {direction === 'TURN_AROUND' && <RotateCcw {...arrowProps} />}
+        {direction === 'ARRIVED' && <CheckCircle className="w-48 h-48 text-green-400 animate-pulse drop-shadow-[0_0_25px_rgba(74,222,128,0.8)]" strokeWidth={1.5} />}
+
+        <span className="text-2xl font-black tracking-[0.5em] text-[#3898ec] drop-shadow-[0_0_10px_rgba(56,152,236,0.8)] uppercase">
+          {direction.replace('_', ' ')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function SwarmInterface() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -88,6 +116,7 @@ function SwarmInterface() {
   const [isScouting, setIsScouting] = useState(false);
   const [userQuery, setUserQuery] = useState('');
   const [activeAgent, setActiveAgent] = useState('scout'); // scout, cartographer, coordinator
+  const [activeDirection, setActiveDirection] = useState('NONE');
 
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
@@ -250,19 +279,32 @@ function SwarmInterface() {
                 Current visual spatial memory database: ${db}
                 (If an image is attached, it's the user's current LIVE view).
                 
-                Provide human-like, very concise navigation instructions (max 2 sentences).
+                Provide human-like, concise navigation instructions (max 2 sentences).
                 If you see the goal in the live image, guide them directly.
                 If it's in the memory database, tell them how to get there.
-                If nowhere to be found, ask them to find a floorplan or map.`
+                If nowhere to be found, ask them to find a floorplan or map.
+
+                RESPOND STRICTLY IN JSON format:
+                {
+                  "instruction": "Your human-like answer here",
+                  "ar_direction": "FORWARD" // MUST BE EXACTLY ONE OF: FORWARD, LEFT, RIGHT, TURN_AROUND, ARRIVED, or NONE
+                }`
               }
             ]
           }
         ]
       });
 
-      const answer = response.text;
+      // Parse JSON from response
+      const jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const data = JSON.parse(jsonStr);
+
+      const answer = data.instruction || "Could not parse navigation instructions.";
+      const direction = data.ar_direction || "NONE";
+
+      setActiveDirection(direction);
       addLog(`Coordinator: ${answer}`, "success");
-      setMemory(prev => ({ ...prev, state: "Awaiting instructions..." }));
+      setMemory(prev => ({ ...prev, state: `AR HUD POINTING: ${direction}` }));
 
       // Speak the response natively!
       if ('speechSynthesis' in window) {
@@ -342,6 +384,10 @@ function SwarmInterface() {
             {/* Corner brackets */}
             <div className="absolute w-[350px] h-[350px] border border-[#3898ec]/30 rounded-full border-t-transparent border-b-transparent animate-[spin_8s_linear_reverse_infinite]" />
           </div>
+
+          {/* AR Direction Overlay HUD */}
+          <ARDirectionOverlay direction={activeDirection} />
+
         </div>
 
         {/* Bottom Swarm UI Dashboard */}
