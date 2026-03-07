@@ -2,9 +2,7 @@
 
 > **Real-time indoor wayfinding using a multi-agent AI swarm, powered by the Gemini Multimodal Live API.**
 
-https://github.com/user-attachments/assets/Demo.mp4
-
-<video src="naviswarm/Demo.mp4" controls width="100%"></video>
+<video src="naviswarm/Demo_compressed.mp4" controls width="100%"></video>
 
 NaviSwarm transforms your phone's camera into an intelligent indoor navigation system. Instead of relying on GPS (which fails indoors), NaviSwarm uses a coordinated swarm of AI agents — built on Google's Gemini 2.5 Flash and the Gemini Multimodal Live API — to continuously map your surroundings, understand spatial context, and guide you to your destination with real-time AR directional overlays.
 
