@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound } from 'lucide-react';
+import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 // ------------------------------------------------------------------
@@ -47,14 +47,38 @@ export default function App() {
     );
   }
 
-  return <SwarmInterface apiKey={API_KEY} />;
+  return <SwarmInterface />;
 }
 
-function SwarmInterface({ apiKey }) {
+// ------------------------------------------------------------------
+// Typing Text Animation Component
+// ------------------------------------------------------------------
+function TypewriterText({ text, speed = 20 }) {
+  const [displayed, setDisplayed] = useState('');
+
+  useEffect(() => {
+    let i = 0;
+    setDisplayed('');
+    if (!text) return;
+
+    // Quick burst effect
+    const interval = setInterval(() => {
+      setDisplayed(text.substring(0, i));
+      i++;
+      if (i > text.length) clearInterval(interval);
+    }, speed);
+
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return <span className="typing-cursor font-mono tracking-tight">{displayed}</span>;
+}
+
+function SwarmInterface() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const logsEndRef = useRef(null);
 
-  const [stream, setStream] = useState(null);
   const [memory, setMemory] = useState({
     landmarks: [],
     hazards: [],
@@ -65,6 +89,20 @@ function SwarmInterface({ apiKey }) {
   const [userQuery, setUserQuery] = useState('');
   const [activeAgent, setActiveAgent] = useState('scout'); // scout, cartographer, coordinator
 
+  const addLog = (msg, type = "info") => {
+    setMemory(prev => ({
+      ...prev,
+      logs: [...prev.logs, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }), msg, type }]
+    }));
+  };
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [memory.logs.length]);
+
   // Initialize Camera
   useEffect(() => {
     let activeStream = null;
@@ -73,7 +111,6 @@ function SwarmInterface({ apiKey }) {
         const _stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment", width: { ideal: 1280 } }
         });
-        setStream(_stream);
         if (videoRef.current) {
           videoRef.current.srcObject = _stream;
         }
@@ -90,13 +127,6 @@ function SwarmInterface({ apiKey }) {
       }
     };
   }, []);
-
-  const addLog = (msg, type = "info") => {
-    setMemory(prev => ({
-      ...prev,
-      logs: [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev.logs].slice(0, 10)
-    }));
-  };
 
   const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return null;
@@ -117,7 +147,7 @@ function SwarmInterface({ apiKey }) {
     let isProcessing = false;
 
     // Using GenAI SDK
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
 
     const pingScout = async () => {
       if (isProcessing) return;
@@ -155,7 +185,7 @@ function SwarmInterface({ apiKey }) {
           ]
         });
 
-        const jsonStr = response.text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+        const jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
 
         if (data.landmarks_seen?.length > 0 || data.hazards?.length > 0) {
@@ -188,20 +218,20 @@ function SwarmInterface({ apiKey }) {
 
     intervalId = setInterval(pingScout, 4000); // Ping every 4 seconds
     return () => clearInterval(intervalId);
-  }, [isScouting, apiKey]);
+  }, [isScouting]);
 
   // Coordinator handles the user question
   const handleAskSwarm = async (e) => {
     e.preventDefault();
-    if (!userQuery.trim() || !apiKey) return;
+    if (!userQuery.trim() || !API_KEY) return;
 
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     setActiveAgent('coordinator');
     const question = userQuery;
     setUserQuery('');
 
-    addLog(`User: ${question}`, "info");
-    setMemory(prev => ({ ...prev, state: "Coordinator reasoning..." }));
+    addLog(`USER >> ${question}`, "info");
+    setMemory(prev => ({ ...prev, state: "PROCESSING NEURAL PATHWAYS..." }));
 
     try {
       const db = JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards });
@@ -248,80 +278,98 @@ function SwarmInterface({ apiKey }) {
   };
 
   return (
-    <div className="relative w-full h-screen bg-[#050505] overflow-hidden text-white font-sans">
+    <div className="relative w-full h-screen bg-[#050505] overflow-hidden text-neutral-100 font-sans selection:bg-[#3898ec] selection:text-white">
       {/* Video Feed Layer */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 w-full h-full object-cover opacity-60 mix-blend-screen"
+        className="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-screen scale-105"
       />
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Augmented Reality Overlay */}
-      <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between z-10">
+      {/* Cinematic AR Overlays */}
+      <div className="scanlines absolute inset-0 mix-blend-overlay"></div>
+      <div className="vignette absolute inset-0"></div>
+
+      {/* Augmented Reality Container */}
+      <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between z-10 transition-all duration-500">
 
         {/* Top Header */}
         <div className="flex justify-between items-start">
-          <div className="glass-panel px-4 py-2 rounded-full flex items-center gap-3">
-            <div className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isScouting ? 'bg-green-400' : 'bg-red-500'}`}></span>
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${isScouting ? 'bg-green-500' : 'bg-red-600'}`}></span>
+          <div className="glass-panel px-5 py-2.5 rounded-sm flex items-center gap-4 data-sweep box-border border-l-2 border-l-[#3898ec]">
+            <BrainCircuit className={`w-5 h-5 ${isScouting ? 'text-[#3898ec] animate-pulse' : 'text-neutral-600'}`} />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-neutral-400 font-mono tracking-widest uppercase leading-none mb-1">System State</span>
+              <span className="text-xs font-bold tracking-widest text-neutral-100 uppercase leading-none">
+                {isScouting ? 'SWARM UPLINK ESTABLISHED' : 'SYSTEM STANDBY'}
+              </span>
             </div>
-            <span className="text-xs font-bold tracking-widest text-zinc-300 uppercase">
-              {isScouting ? 'SWARM ACTIVE' : 'SWARM IDLE'}
-            </span>
           </div>
 
           <button
             onClick={() => setIsScouting(!isScouting)}
-            className={`pointer-events-auto px-5 py-2 rounded-full text-xs font-bold transition-all border
+            className={`pointer-events-auto px-6 py-2.5 rounded-sm text-xs font-bold tracking-widest transition-all uppercase
                ${isScouting
-                ? 'bg-red-500/20 text-red-500 border-red-500'
-                : 'bg-[#3898ec]/20 text-[#3898ec] border-[#3898ec]'}`}
+                ? 'bg-red-500/10 text-red-400 border border-red-500/50 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                : 'bg-[#3898ec]/10 text-[#3898ec] border border-[#3898ec]/50 hover:bg-[#3898ec]/20 shadow-[0_0_15px_rgba(56,152,236,0.2)]'}`}
           >
-            {isScouting ? 'HALT SCANNERS' : 'ENGAGE SCANNERS'}
+            {isScouting ? 'TERMINATE UPLINK' : 'INITIALIZE UPLINK'}
           </button>
         </div>
 
-        {/* Center Target (Optional UI touch) */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className={`w-[300px] h-[300px] border border-white/10 rounded-full flex items-center justify-center
-                          ${isScouting ? 'radar-spin opacity-50' : 'opacity-20'}`}>
-            <div className="w-[150px] h-[150px] border border-[#3898ec]/40 rounded-full pulse-glow" />
-            {/* Reticle lines */}
-            <div className="absolute w-[320px] h-[1px] bg-white/5" />
-            <div className="absolute h-[320px] w-[1px] bg-white/5" />
+        {/* Center Target AR HUD */}
+        <div className="flex-1 flex items-center justify-center relative">
+
+          {/* Central status readout */}
+          {memory.state && isScouting && (
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-sm px-4 py-1.5 border border-[#3898ec]/30 rounded-sm">
+              <span className="text-xs font-mono text-[#3898ec] uppercase tracking-widest animate-pulse flex items-center gap-2">
+                <Activity className="w-4 h-4" /> {memory.state}
+              </span>
+            </div>
+          )}
+
+          <div className={`w-[350px] h-[350px] border-[0.5px] border-[#3898ec]/10 rounded-full flex items-center justify-center relative
+                          ${isScouting ? 'radar-spin opacity-80' : 'opacity-20'}`}>
+            <div className="w-[180px] h-[180px] border border-[#3898ec]/50 rounded-full pulse-glow" />
+
+            {/* Architectural Reticles */}
+            <div className="absolute w-[400px] h-[0.5px] bg-[#3898ec]/20" />
+            <div className="absolute h-[400px] w-[0.5px] bg-[#3898ec]/20" />
+
+            {/* Corner brackets */}
+            <div className="absolute w-[350px] h-[350px] border border-[#3898ec]/30 rounded-full border-t-transparent border-b-transparent animate-[spin_8s_linear_reverse_infinite]" />
           </div>
         </div>
 
         {/* Bottom Swarm UI Dashboard */}
-        <div className="glass-panel rounded-2xl border-t border-t-white/10 p-5 mt-auto flex flex-col gap-4 max-h-[45vh] pointer-events-auto">
+        <div className="glass-panel rounded-sm border-t-2 border-t-[#3898ec]/50 p-6 mt-auto flex flex-col gap-5 max-h-[45vh] pointer-events-auto backdrop-blur-xl">
 
-          <div className="flex gap-4 mb-2">
+          <div className="flex gap-6 mb-2">
             {/* Memory Graph */}
-            <div className="flex-1 overflow-y-auto max-h-[150px] pr-2 scrollbar-hide space-y-2">
-              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider sticky top-0 bg-[#0a0a0a]/80 backdrop-blur pb-1 z-10">
-                Spatial Memory Graph ({memory.landmarks.length})
+            <div className="flex-1 overflow-y-auto max-h-[160px] pr-4 scrollbar-hide space-y-3">
+              <div className="text-[10px] font-bold text-[#3898ec] uppercase tracking-[0.2em] sticky top-0 bg-[#0a0a0a]/90 backdrop-blur pb-2 z-10 border-b border-white/5 mb-3">
+                Spatial Knowledge Graph <span className="text-neutral-500 ml-2">[{memory.landmarks.length} NODES]</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {memory.landmarks.length === 0 && <span className="text-xs text-zinc-600">No objects mapped...</span>}
+                {memory.landmarks.length === 0 && <span className="text-[11px] text-neutral-600 font-mono tracking-widest">Awaiting spatial mappings...</span>}
                 {memory.landmarks.map((m, i) => (
-                  <div key={i} className="bg-zinc-800/80 text-zinc-300 border border-zinc-700 px-3 py-1 rounded-md text-xs flex items-center gap-2">
-                    <Navigation className="w-3 h-3 text-[#3898ec]" /> {m}
+                  <div key={i} className="bg-white/5 text-neutral-200 border border-white/10 px-3 py-1.5 rounded-sm text-[11px] font-mono flex items-center gap-2 hover:bg-white/10 transition-colors">
+                    <Navigation className="w-3 h-3 text-[##3898ec]" /> {m}
                   </div>
                 ))}
               </div>
 
               {memory.hazards.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <ShieldAlert className="w-3 h-3" /> Hazards Detected
+                <div className="mt-4">
+                  <div className="text-[10px] font-bold text-red-500 uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+                    <ShieldAlert className="w-3 h-3 animate-pulse" /> Critical Path Hazards
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {memory.hazards.map((h, i) => (
-                      <div key={i} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1 rounded-md text-xs">
+                      <div key={i} className="bg-red-500/10 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-sm text-[11px] font-mono shadow-[0_0_10px_rgba(239,68,68,0.1)]">
                         {h}
                       </div>
                     ))}
@@ -331,40 +379,41 @@ function SwarmInterface({ apiKey }) {
             </div>
 
             {/* Agent Logs */}
-            <div className="w-[200px] border-l border-zinc-800 pl-4 flex flex-col">
-              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Agent Feed</div>
-              <div className="flex-1 overflow-y-auto max-h-[120px] space-y-2">
+            <div className="w-[300px] border-l border-white/10 pl-5 flex flex-col bg-black/20 rounded-sm box-border relative">
+              <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em] mb-3 sticky top-0 bg-[#0a0a0a]/90 backdrop-blur pb-2">Swarm Telemetry</div>
+              <div className="flex-1 overflow-y-auto max-h-[140px] space-y-3 scroll-smooth">
                 {memory.logs.map((log, i) => (
-                  <div key={i} className={`text-[10px] leading-tight flex flex-col ${log.type === 'error' ? 'text-red-400' :
-                    log.type === 'success' ? 'text-green-400' :
-                      log.type === 'warning' ? 'text-yellow-400' : 'text-zinc-400'
+                  <div key={i} className={`text-[11px] font-mono leading-relaxed flex flex-col ${log.type === 'error' ? 'text-red-400' :
+                    log.type === 'success' ? 'text-[#3898ec]' :
+                      log.type === 'warning' ? 'text-yellow-400' : 'text-neutral-400'
                     }`}>
-                    <span className="opacity-50 text-[8px]">{log.time}</span>
-                    <span>{log.msg}</span>
+                    <span className="opacity-40 text-[9px] tracking-widest">{log.time}</span>
+                    <TypewriterText text={log.msg} speed={10} />
                   </div>
                 ))}
+                <div ref={logsEndRef} />
               </div>
             </div>
           </div>
 
-          <div className="h-[1px] w-full bg-zinc-800" />
+          <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#3898ec]/30 to-transparent my-1" />
 
           {/* User Input Coordinator */}
-          <form onSubmit={handleAskSwarm} className="relative flex items-center">
-            <div className="absolute left-3 p-1 rounded-full bg-[#3898ec]/20">
+          <form onSubmit={handleAskSwarm} className="relative flex items-center group">
+            <div className="absolute left-4 shadow-[0_0_10px_rgba(56,152,236,0.2)] p-1.5 rounded-sm bg-[#3898ec]/20 border border-[#3898ec]/30">
               {activeAgent === 'scout' ? <Camera className="w-4 h-4 text-[#3898ec]" /> :
-                activeAgent === 'coordinator' ? <Mic className="w-4 h-4 text-purple-400" /> :
-                  <Map className="w-4 h-4 text-green-400" />}
+                activeAgent === 'coordinator' ? <Mic className="w-4 h-4 text-[#3898ec] animate-pulse" /> :
+                  <Map className="w-4 h-4 text-[#3898ec]" />}
             </div>
             <input
               type="text"
               value={userQuery}
               onChange={(e) => setUserQuery(e.target.value)}
-              placeholder="Ask Coordinate Agent (e.g. Where is the lobby?)"
-              className="w-full bg-[#1a1a1a] border border-zinc-700 focus:border-[#3898ec] rounded-xl pl-12 pr-12 py-3 text-sm text-white placeholder-zinc-500 outline-none"
+              placeholder="Query Swarm Intelligence (e.g. Locate nearest exit)"
+              className="w-full bg-black/60 border border-white/10 group-hover:border-[#3898ec]/50 focus:border-[#3898ec] rounded-sm pl-16 pr-14 py-4 text-[13px] font-mono text-white placeholder-neutral-600 outline-none transition-all duration-300"
             />
-            <button type="submit" className="absolute right-2 p-2 bg-[#3898ec] hover:bg-blue-500 rounded-lg transition-colors">
-              <Zap className="w-4 h-4 text-white" />
+            <button type="submit" className="absolute right-2 px-4 py-2 bg-[#3898ec] hover:bg-blue-400 rounded-sm transition-all duration-300 shadow-[0_0_15px_rgba(56,152,236,0.3)]">
+              <Zap className="w-4 h-4 text-black" />
             </button>
           </form>
 
