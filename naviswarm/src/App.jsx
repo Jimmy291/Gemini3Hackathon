@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle, Crosshair } from 'lucide-react';
+import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle, Crosshair, Power, ArrowUp } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 // ------------------------------------------------------------------
@@ -18,28 +18,30 @@ export default function App() {
 
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 text-slate-900 font-sans">
-        <div className="max-w-xl w-full nav-panel p-12 rounded-[2.5rem] text-center border-none">
-          <div className="flex justify-center mb-8">
-            <div className="bg-white p-4 rounded-full shadow-xl">
-              <img src="/logo.png" alt="NaviSwarm Logo" className="w-24 h-24 rounded-full object-cover" />
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6 text-white font-sans">
+        <div className="max-w-md w-full glass-panel p-8 rounded-2xl border border-zinc-800 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#3898ec] to-indigo-500"></div>
+
+          <div className="flex justify-center mb-6">
+            <div className="bg-[#1a1a1a] p-1 rounded-full border border-zinc-800 shadow-[0_0_20px_rgba(56,152,236,0.4)]">
+              <img src="/logo.png" alt="NaviSwarm Logo" className="w-16 h-16 rounded-full object-cover" />
             </div>
           </div>
 
-          <h1 className="text-5xl font-black mb-4 tracking-tight text-slate-900">Digital Assistant</h1>
-          <p className="text-2xl text-slate-500 mb-12 font-medium">Helping you find your way, safely.</p>
+          <h1 className="text-3xl font-bold text-center mb-2 tracking-tight">NaviSwarm</h1>
+          <p className="text-zinc-400 text-center mb-8 text-sm">Semantic Spatial Intelligence System</p>
 
-          <form onSubmit={startSwarm} className="space-y-6">
+          <form onSubmit={startSwarm} className="space-y-4">
+            <p className="text-center text-zinc-500 text-xs mb-8">System API Key configured internally.</p>
+
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-8 px-8 rounded-3xl shadow-2xl transition-all transform hover:scale-105 flex items-center justify-center gap-4 text-3xl"
+              className="w-full bg-[#3898ec] hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(56,152,236,0.3)] hover:shadow-[0_0_20px_rgba(56,152,236,0.5)] transition-all flex items-center justify-center gap-2"
             >
-              Start Guide
-              <Zap className="w-8 h-8" />
+              Initialize Swarm
+              <Zap className="w-4 h-4" />
             </button>
           </form>
-
-          <p className="mt-8 text-slate-400 font-medium">Click the button above to begin.</p>
         </div>
       </div>
     );
@@ -73,48 +75,30 @@ function TypewriterText({ text, speed = 20 }) {
 }
 
 // ------------------------------------------------------------------
-// AR Directional Overlay Component
-// ------------------------------------------------------------------
-// ------------------------------------------------------------------
-// AR Directional Overlay Component - Redesigned for Elderly
+// Minimalist, User-Centric AR Directional Overlay
 // ------------------------------------------------------------------
 function ARDirectionOverlay({ direction, instruction }) {
-  if (!direction || direction === 'NONE') {
-    if (instruction) {
-      return (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[90%] z-20 pointer-events-none">
-          <div className="direction-card p-10 rounded-[3rem] text-center border-8 border-white">
-            <p className="text-4xl font-bold leading-tight">{instruction}</p>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  }
+  if (!direction || direction === 'NONE') return null;
 
-  const iconProps = {
-    className: "w-40 h-40 text-white mb-6",
-    strokeWidth: 3
+  const arrowProps = {
+    className: "w-64 h-64 text-white drop-shadow-[0_10px_30px_rgba(56,152,236,1)] animate-[float_3s_ease-in-out_infinite]",
+    strokeWidth: 2.5
   };
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none p-10">
-      <div className="direction-card w-full max-w-2xl p-12 rounded-[4rem] flex flex-col items-center border-[10px] border-white">
-        {direction === 'FORWARD' && <ChevronsUp {...iconProps} />}
-        {direction === 'LEFT' && <ChevronsLeft {...iconProps} />}
-        {direction === 'RIGHT' && <ChevronsRight {...iconProps} />}
-        {direction === 'TURN_AROUND' && <RotateCcw {...iconProps} />}
-        {direction === 'ARRIVED' && <CheckCircle className="w-40 h-40 text-green-300 mb-6" strokeWidth={3} />}
+    <div className="absolute top-[15%] left-0 w-full flex flex-col items-center justify-center z-20 pointer-events-none">
+      <div className="flex flex-col items-center justify-center gap-6">
+        {direction === 'FORWARD' && <ChevronsUp {...arrowProps} />}
+        {direction === 'LEFT' && <ChevronsLeft {...arrowProps} />}
+        {direction === 'RIGHT' && <ChevronsRight {...arrowProps} />}
+        {direction === 'TURN_AROUND' && <RotateCcw {...arrowProps} />}
+        {direction === 'ARRIVED' && <CheckCircle className="w-64 h-64 text-green-400 drop-shadow-[0_10px_30px_rgba(74,222,128,0.8)] animate-[pulse_1.5s_ease-in-out_infinite]" strokeWidth={2.5} />}
 
-        <h2 className="text-6xl font-black mb-4 uppercase tracking-tighter">
-          {direction === 'FORWARD' && "Go Forward"}
-          {direction === 'LEFT' && "Turn Left"}
-          {direction === 'RIGHT' && "Turn Right"}
-          {direction === 'TURN_AROUND' && "Go Back"}
-          {direction === 'ARRIVED' && "You Are Here!"}
-        </h2>
-
-        {instruction && <p className="text-3xl font-semibold opacity-90 text-center">{instruction}</p>}
+        <div className="bg-black/40 backdrop-blur-xl px-10 py-4 rounded-full border border-white/20 shadow-2xl">
+          <span className="text-4xl font-black tracking-widest text-white uppercase text-center block">
+            {direction.replace('_', ' ')}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -179,14 +163,22 @@ function SwarmInterface() {
   const speakNaturalTone = (text) => {
     if (!text || text.trim() === '') return;
 
-    // Direct Web Speech API Synthesis
+    // Direct Web Speech API Synthesis (Fallback)
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.05; // Slightly faster for techy feel
 
+      const voices = window.speechSynthesis.getVoices();
+      const premiumVoice = voices.find(v =>
+        v.name.includes('Google') ||
+        v.name.includes('Samantha') ||
+        v.name.includes('Premium') ||
+        v.name.includes('Daniel')
+      );
+      if (premiumVoice) utterance.voice = premiumVoice;
+
       // Start subtitle sync based on approximate reading duration
-      const words = text.split(' ').length;
-      const durationMs = (words / 2.5) * 1000; // ~2.5 words per second
+      const durationMs = (text.split(' ').length / 2.5) * 1000;
       startSubtitleSync(text, durationMs);
 
       window.speechSynthesis.speak(utterance);
@@ -261,6 +253,7 @@ function SwarmInterface() {
     if (!videoRef.current || !canvasRef.current) return null;
     const cw = videoRef.current.videoWidth;
     const ch = videoRef.current.videoHeight;
+    if (cw === 0 || ch === 0) return null;
     canvasRef.current.width = cw;
     canvasRef.current.height = ch;
     const ctx = canvasRef.current.getContext('2d');
@@ -362,13 +355,15 @@ function SwarmInterface() {
 
     // Cancel any currently playing audio loops
     clearInterval(window.subtitleInterval);
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const question = typeof e === 'string' ? e : userQuery || "Voice Audio attached.";
     if (typeof e !== 'string') setUserQuery('');
 
     addLog(`USER >> ${audioBase64 ? "[AUDIO SENT TO SWARM]" : question}`, "info");
-    setMemory(prev => ({ ...prev, state: "PROCESSING NEURAL PATHWAYS..." }));
+    setActiveSubtitle('');
+    setMemory(prev => ({ ...prev, state: "Processing your request...", lastAnswer: "" }));
 
     try {
       const db = JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards });
@@ -459,6 +454,7 @@ function SwarmInterface() {
       const finalMsgMatch = fullResponseString.match(/MESSAGE:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
       const finalMsg = finalMsgMatch ? finalMsgMatch[1].trim() : "Audio Reply Streamed.";
       addLog(`Coordinator: ${finalMsg}`, "success");
+      setMemory(prev => ({ ...prev, lastAnswer: finalMsg }));
 
     } catch (err) {
       console.error(err);
@@ -521,63 +517,65 @@ function SwarmInterface() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-slate-100 overflow-hidden text-slate-900 font-sans">
+    <div className="relative w-full h-screen bg-black overflow-hidden text-neutral-100 font-sans selection:bg-[#3898ec] selection:text-white">
       {/* Video Feed Layer */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105"
       />
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Simplified AR Overlays */}
-      <div className="soft-vignette absolute inset-0"></div>
+      {/* Subtle UI Enhancements */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none z-0"></div>
 
       {/* Main UI Container */}
-      <div className="absolute inset-0 pointer-events-none p-8 flex flex-col justify-between z-10">
+      <div className="absolute inset-0 p-6 flex flex-col justify-between z-10 transition-all duration-500">
 
-        {/* Top Controls */}
-        <div className="flex justify-between items-start">
-          <div className="nav-panel px-8 py-5 rounded-[2rem] flex items-center gap-6 border-none">
-            <div className={`p-4 rounded-full bg-blue-100 ${isScouting ? 'animate-pulse' : ''}`}>
-              <BrainCircuit className="w-8 h-8 text-blue-600" />
-            </div>
+        {/* Top Header - User Friendly */}
+        <div className="flex justify-between items-start pointer-events-none mt-2">
+          <div className="bg-black/40 backdrop-blur-2xl px-6 py-3 rounded-2xl flex items-center gap-4 border border-white/10 shadow-lg max-w-[65%]">
+            <BrainCircuit className={`w-8 h-8 ${isScouting ? 'text-[#3898ec] animate-[pulse_2s_ease-in-out_infinite]' : 'text-neutral-500'}`} />
             <div className="flex flex-col">
-              <span className="text-3xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-3">
-                {isScouting ? 'Guide is ON' : 'Guide is OFF'}
-                {isScouting && <div className={`w-4 h-4 rounded-full ${isMoving ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} title={isMoving ? "Motion Detected" : "Stationary (Saving energy)"} />}
+              <span className="text-base font-bold tracking-wide text-white flex items-center gap-2">
+                {isScouting ? 'AI Guide Active' : 'AI Guide Offline'}
+                {isScouting && <div className={`w-2.5 h-2.5 rounded-full ${isMoving ? 'bg-[#3898ec] animate-pulse shadow-[0_0_10px_rgba(56,152,236,0.8)]' : 'bg-yellow-500'}`} />}
               </span>
-              <span className="text-xl text-slate-500 font-bold">
-                {isScouting && !isMoving ? 'Currently waiting for you to move...' : memory.state}
+              {/* Show background AI task explicitly */}
+              <span className="text-xs text-neutral-300 font-medium leading-tight mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+                {isScouting ? memory.state : "Ready to scan"}
               </span>
             </div>
           </div>
 
           <button
             onClick={() => setIsScouting(!isScouting)}
-            className={`pointer-events-auto px-10 py-6 rounded-[2rem] text-2xl font-black transition-all uppercase shadow-2xl
+            className={`pointer-events-auto px-5 py-3 flex items-center gap-2 rounded-full backdrop-blur-2xl transition-all shadow-lg text-sm font-bold tracking-wider
                ${isScouting
-                ? 'bg-red-500 text-white'
-                : 'bg-blue-600 text-white'}`}
+                ? 'bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30'
+                : 'bg-[#3898ec] text-white hover:bg-blue-500 shadow-[0_0_20px_rgba(56,152,236,0.5)]'}`}
           >
-            {isScouting ? 'Stop' : 'Start'}
+            <Power className="w-5 h-5" />
+            {isScouting ? 'END TOUR' : 'START'}
           </button>
         </div>
 
-        {/* Center Directions (AR Overlays) */}
-        <div className="flex-1 flex items-center justify-center relative">
-          <ARDirectionOverlay direction={activeDirection} instruction={memory.lastAnswer} />
+        {/* Center Target AR HUD */}
+        <div className="flex-1 flex items-center justify-center relative pointer-events-none">
 
-          {/* Subtle Reticle */}
-          {(!activeDirection || activeDirection === 'NONE') && (
-            <div className="w-64 h-64 border-8 border-white/30 rounded-full flex items-center justify-center">
-              <div className="w-32 h-32 border-4 border-white/20 rounded-full pulse-glow" />
+          {/* Subtle Central Reticle when not directing */}
+          {(!activeDirection || activeDirection === 'NONE') && isScouting && (
+            <div className="w-24 h-24 border border-white/20 rounded-full flex items-center justify-center">
+              <div className="w-2 h-2 bg-white/50 rounded-full" />
             </div>
           )}
 
-          {/* AR Bounding Box Tracker - Styled for Accessibility */}
+          {/* Massive AR Direction Overlay HUD */}
+          <ARDirectionOverlay direction={activeDirection} instruction={memory.lastAnswer} />
+
+          {/* AR Bounding Box Tracker - Refined */}
           {activeTargets.map((target, idx) => {
             const [ymin, xmin, ymax, xmax] = target.box;
             const top = `${(ymin / 1000) * 100}%`;
@@ -588,67 +586,60 @@ function SwarmInterface() {
             return (
               <div
                 key={idx}
-                className="absolute border-8 border-blue-500 bg-blue-500/10 rounded-2xl shadow-2xl transition-all duration-700 ease-in-out pointer-events-none z-30"
+                className="absolute border-4 border-[#3898ec]/80 bg-[#3898ec]/10 shadow-[0_0_30px_rgba(56,152,236,0.3)] rounded-2xl transition-all duration-500 ease-out pointer-events-none z-30"
                 style={{ top, left, width, height }}
               >
-                {/* Visual Label */}
-                <div className="absolute -top-16 left-0 bg-blue-600 text-white text-2xl font-black px-6 py-2 rounded-full shadow-lg flex items-center gap-3 whitespace-nowrap">
-                  <div className="w-4 h-4 bg-white rounded-full animate-ping" />
+                {/* Clean Target Pill */}
+                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-2xl border border-white/10 text-white text-base font-bold px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl whitespace-nowrap">
+                  <Crosshair className="w-5 h-5 text-[#3898ec] animate-[spin_4s_linear_infinite]" />
                   {target.label}
                 </div>
               </div>
             );
           })}
-          {/* Cinematic Word-by-Word Subtitles */}
-          {activeSubtitle && (
-            <div className="absolute bottom-[28%] left-1/2 -translate-x-1/2 w-4/5 text-center pointer-events-none z-50">
-              <span className="bg-black/70 backdrop-blur-md text-white font-mono text-lg md:text-xl px-4 py-2 leading-relaxed tracking-wider shadow-[0_0_20px_rgba(56,152,236,0.3)] border-l-4 border-[#3898ec]">
-                {activeSubtitle}
-                <span className="w-2 h-5 inline-block bg-[#3898ec] animate-[pulse_0.5s_infinite] ml-2 align-middle"></span>
-              </span>
-            </div>
-          )}
+
         </div>
 
-        {/* Bottom Control Bar */}
-        <div className="flex flex-col gap-6 mt-auto pointer-events-auto">
-          {/* Map Preview (Circle) */}
-          <div className="flex justify-center">
-            <div className="w-56 h-56 rounded-full bg-white/90 backdrop-blur-xl map-circle relative overflow-hidden flex items-center justify-center border-none">
-              <div className="absolute inset-0 opacity-20 bg-[url('https://www.google.com/maps/vt/pb=!1m4!1m3!1i18!2i132470!3i92750!2m3!1e0!2sm!3i667059784!3m17!2sen!3sUS!5e18!12m4!1e68!2m2!1sset!2sRoadmap!12m3!1e37!2m1!1ssmartmaps!12m3!1e12!2m1!1s1!4m5!1e1!2swhite!5e0!5m1!1f2!6m8!1e1!2b1!3b1!4b1!5b1!6b1!7b1!8b1!9b1')] bg-cover scale-150 rotate-12"></div>
-              <div className="relative z-10 flex flex-col items-center">
-                <Navigation className="w-16 h-16 text-blue-600 drop-shadow-lg" fill="currentColor" />
-                <span className="text-xs font-black uppercase mt-2 text-blue-800">Your Location</span>
-              </div>
-              {/* Pulse at bottom circle */}
-              <div className="absolute bottom-4 w-4 h-4 bg-blue-600 rounded-full animate-ping"></div>
-            </div>
-          </div>
+        {/* Bottom Floating Command Bar */}
+        <div className="w-full flex justify-center sticky bottom-0 z-40">
+          <div className="w-full max-w-lg mb-8 pointer-events-auto">
 
-          <div className="flex items-center gap-6">
-            <div className="flex-1">
-              <form onSubmit={handleAskSwarm} className="relative flex items-center">
+            {/* Dynamic Subtitles floating directly above the input */}
+            <div className="w-full flex justify-center mb-6 pointer-events-none">
+              {activeSubtitle ? (
+                <div className="bg-black/60 backdrop-blur-xl border border-white/10 text-white font-medium text-2xl px-8 py-4 rounded-3xl text-center shadow-2xl">
+                  {activeSubtitle}
+                </div>
+              ) : memory.lastAnswer ? (
+                <div className="bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 font-medium text-lg px-6 py-3 rounded-2xl max-w-[85%] text-center opacity-80 transition-opacity">
+                  "{memory.lastAnswer}"
+                </div>
+              ) : null}
+            </div>
+
+            {/* Search / Voice unified pill */}
+            <div className="flex gap-3">
+              <form onSubmit={handleAskSwarm} className="relative flex-1 flex items-center group">
                 <input
                   type="text"
                   value={userQuery}
                   onChange={(e) => setUserQuery(e.target.value)}
-                  placeholder={isListening ? "Listening..." : "How can I help you today?"}
-                  className={`w-full bg-white text-3xl font-bold py-10 px-12 rounded-[3.5rem] shadow-2xl border-none focus:ring-8 focus:ring-blue-200 outline-none transition-all ${isListening ? 'ring-8 ring-blue-500' : ''}`}
+                  placeholder={isListening ? "Actively listening..." : "Where would you like to go?"}
+                  className={`w-full bg-black/50 backdrop-blur-3xl border border-white/20 focus:border-[#3898ec] focus:bg-black/80 rounded-full pl-6 pr-16 py-4 text-lg text-white placeholder-neutral-400 shadow-2xl outline-none transition-all duration-300 ${isListening ? 'bg-[#3898ec]/20 border-[#3898ec] placeholder-white' : ''}`}
                 />
-                <button type="submit" className="absolute right-4 p-6 bg-blue-600 hover:bg-blue-700 rounded-full text-white shadow-xl transition-all active:scale-95">
-                  <Zap className="w-10 h-10" />
+                <button type="submit" className="absolute right-2 p-2.5 bg-white hover:bg-gray-200 rounded-full transition-all duration-300 shadow-lg group-focus-within:bg-[#3898ec] group-focus-within:text-white text-black">
+                  <ArrowUp className="w-6 h-6" strokeWidth={3} />
                 </button>
               </form>
-            </div>
 
-            <button
-              type="button"
-              onClick={toggleVoiceCommand}
-              className={`p-4 rounded-sm transition-all flex items-center justify-center border ${isListening ? 'bg-purple-500/20 border-purple-500 animate-[pulse_1s_infinite] shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
-              title="Voice Control"
-            >
-              <Mic className="w-14 h-14" strokeWidth={3} />
-            </button>
+              <button
+                type="button"
+                onClick={toggleVoiceCommand}
+                className={`p-4 rounded-full transition-all shadow-2xl flex items-center justify-center backdrop-blur-3xl ${isListening ? 'bg-red-500 text-white animate-[pulse_1.5s_ease-in-out_infinite] shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'bg-black/50 border border-white/20 hover:bg-black/70 text-white'}`}
+              >
+                <Mic className="w-6 h-6" strokeWidth={isListening ? 3 : 2} />
+              </button>
+            </div>
           </div>
         </div>
 
