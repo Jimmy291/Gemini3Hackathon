@@ -117,6 +117,7 @@ function SwarmInterface() {
   const [userQuery, setUserQuery] = useState('');
   const [activeAgent, setActiveAgent] = useState('scout'); // scout, cartographer, coordinator
   const [activeDirection, setActiveDirection] = useState('NONE');
+  const [isListening, setIsListening] = useState(false);
 
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
@@ -256,8 +257,8 @@ function SwarmInterface() {
 
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     setActiveAgent('coordinator');
-    const question = userQuery;
-    setUserQuery('');
+    const question = typeof e === 'string' ? e : userQuery;
+    if (typeof e !== 'string') setUserQuery('');
 
     addLog(`USER >> ${question}`, "info");
     setMemory(prev => ({ ...prev, state: "PROCESSING NEURAL PATHWAYS..." }));
@@ -317,6 +318,45 @@ function SwarmInterface() {
       console.error(err);
       addLog(`Coordinator Error: ${err.message}`, "error");
     }
+  };
+
+  const startVoiceCommand = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addLog("Voice Recon: System not supported.", "error");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setActiveAgent('coordinator');
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setUserQuery(transcript);
+      // Automatically trigger the agent reasoning after a brief pause to show the text
+      setTimeout(() => {
+        handleAskSwarm(transcript);
+      }, 500);
+    };
+
+    recognition.onerror = (err) => {
+      console.error("Speech Error:", err);
+      setIsListening(false);
+      addLog(`Voice Error: ${err.error}`, "error");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
   };
 
   return (
@@ -445,21 +485,32 @@ function SwarmInterface() {
           <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#3898ec]/30 to-transparent my-1" />
 
           {/* User Input Coordinator */}
-          <form onSubmit={handleAskSwarm} className="relative flex items-center group">
-            <div className="absolute left-4 shadow-[0_0_10px_rgba(56,152,236,0.2)] p-1.5 rounded-sm bg-[#3898ec]/20 border border-[#3898ec]/30">
-              {activeAgent === 'scout' ? <Camera className="w-4 h-4 text-[#3898ec]" /> :
-                activeAgent === 'coordinator' ? <Mic className="w-4 h-4 text-[#3898ec] animate-pulse" /> :
-                  <Map className="w-4 h-4 text-[#3898ec]" />}
+          <form onSubmit={handleAskSwarm} className="relative flex items-center gap-2 group pointer-events-auto">
+            <div className="relative flex-1 flex items-center">
+              <div className="absolute left-4 shadow-[0_0_10px_rgba(56,152,236,0.2)] p-1.5 rounded-sm bg-[#3898ec]/20 border border-[#3898ec]/30 z-10">
+                {activeAgent === 'scout' ? <Camera className="w-4 h-4 text-[#3898ec]" /> :
+                  activeAgent === 'coordinator' ? <Mic className={`w-4 h-4 text-[#3898ec] ${isListening ? 'animate-pulse' : ''}`} /> :
+                    <Map className="w-4 h-4 text-[#3898ec]" />}
+              </div>
+              <input
+                type="text"
+                value={userQuery}
+                onChange={(e) => setUserQuery(e.target.value)}
+                placeholder={isListening ? "LISTENING FOR UPLINK COMMAND..." : "Query Swarm Intelligence (e.g. Locate nearest exit)"}
+                className={`w-full bg-black/60 border border-white/10 group-hover:border-[#3898ec]/50 focus:border-[#3898ec] rounded-sm pl-16 pr-14 py-4 text-[13px] font-mono text-white placeholder-neutral-600 outline-none transition-all duration-300 ${isListening ? 'ring-1 ring-purple-500/50 border-purple-500' : ''}`}
+              />
+              <button type="submit" className="absolute right-2 px-4 py-2 bg-[#3898ec] hover:bg-blue-400 rounded-sm transition-all duration-300 shadow-[0_0_15px_rgba(56,152,236,0.3)]">
+                <Zap className="w-4 h-4 text-black" />
+              </button>
             </div>
-            <input
-              type="text"
-              value={userQuery}
-              onChange={(e) => setUserQuery(e.target.value)}
-              placeholder="Query Swarm Intelligence (e.g. Locate nearest exit)"
-              className="w-full bg-black/60 border border-white/10 group-hover:border-[#3898ec]/50 focus:border-[#3898ec] rounded-sm pl-16 pr-14 py-4 text-[13px] font-mono text-white placeholder-neutral-600 outline-none transition-all duration-300"
-            />
-            <button type="submit" className="absolute right-2 px-4 py-2 bg-[#3898ec] hover:bg-blue-400 rounded-sm transition-all duration-300 shadow-[0_0_15px_rgba(56,152,236,0.3)]">
-              <Zap className="w-4 h-4 text-black" />
+
+            <button
+              type="button"
+              onClick={startVoiceCommand}
+              className={`p-4 rounded-sm transition-all flex items-center justify-center border ${isListening ? 'bg-purple-500/20 border-purple-500 animate-pulse shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
+              title="Voice Control"
+            >
+              <Mic className={`w-5 h-5 ${isListening ? 'text-purple-400' : 'text-neutral-400'}`} />
             </button>
           </form>
 
