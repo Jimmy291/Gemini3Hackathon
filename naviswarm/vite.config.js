@@ -8,5 +8,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), basicSsl()],
   server: {
     host: true
-  }
+  },
+  base: './'
 })
