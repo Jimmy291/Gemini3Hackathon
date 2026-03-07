@@ -2,16 +2,18 @@ import { useState, useRef, useEffect } from 'react';
 import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
+// ------------------------------------------------------------------
+// API KEY CONFIGURATION
+// Paste your Gemini API key directly here.
+const API_KEY = "AIzaSyAupyIL__n1kzspxvDJ4WyAyv-zLgdNbwQ";
+// ------------------------------------------------------------------
+
 export default function App() {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [isReady, setIsReady] = useState(false);
 
   const startSwarm = (e) => {
     e.preventDefault();
-    if (apiKey.trim()) {
-      localStorage.setItem('gemini_api_key', apiKey);
-      setIsReady(true);
-    }
+    setIsReady(true);
   };
 
   if (!isReady) {
@@ -30,22 +32,7 @@ export default function App() {
           <p className="text-zinc-400 text-center mb-8 text-sm">Semantic Spatial Intelligence System</p>
 
           <form onSubmit={startSwarm} className="space-y-4">
-            <div>
-              <label className="block text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">Gemini API Key</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <KeyRound className="h-4 w-4 text-zinc-500" />
-                </div>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-[#141414] border border-zinc-800 focus:border-[#3898ec] focus:ring-1 focus:ring-[#3898ec] rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-all"
-                  required
-                />
-              </div>
-            </div>
+            <p className="text-center text-zinc-500 text-xs mb-8">System API Key configured internally.</p>
 
             <button
               type="submit"
@@ -60,7 +47,7 @@ export default function App() {
     );
   }
 
-  return <SwarmInterface apiKey={apiKey} />;
+  return <SwarmInterface apiKey={API_KEY} />;
 }
 
 function SwarmInterface({ apiKey }) {
@@ -147,7 +134,7 @@ function SwarmInterface({ apiKey }) {
 
       try {
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.1-pro',
           contents: [
             {
               role: 'user',
@@ -221,7 +208,7 @@ function SwarmInterface({ apiKey }) {
       const frameBase64 = captureFrame();
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3.1-pro',
         contents: [
           {
             role: 'user',
