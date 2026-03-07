@@ -6,7 +6,7 @@ import { AudioRecorder, AudioPlayer } from './lib/audio-utils.js';
 // ------------------------------------------------------------------
 // API KEY CONFIGURATION
 // Paste your Gemini API key directly here.
-const API_KEY = "AIzaSyBGLosDsHIRQBsFT2JV3FUlGmlPUS2mvac";
+const API_KEY = "AIzaSy...";
 // ------------------------------------------------------------------
 
 export default function App() {
@@ -106,6 +106,14 @@ function SwarmInterface() {
   const [activeTargets, setActiveTargets] = useState([]); // [{ label, box: [y1, x1, y2, x2] }]
   const [isMoving, setIsMoving] = useState(true);
   const [activeSubtitle, setActiveSubtitle] = useState('');
+
+  const activeGoalRef = useRef('');
+  const lastSpokenRef = useRef('');
+  const memoryRef = useRef(memory);
+
+  useEffect(() => {
+    memoryRef.current = memory;
+  }, [memory]);
 
   // Camera State
   const currentCameraIdRef = useRef(null);
@@ -312,9 +320,28 @@ function SwarmInterface() {
         return;
       }
 
-      setMemory(prev => ({ ...prev, state: "Scout pinging environment..." }));
+      setMemory(prev => ({ ...prev, state: activeGoalRef.current ? "Guiding towards goal..." : "Scout pinging environment..." }));
 
       try {
+        const currentGoal = activeGoalRef.current;
+        const promptText = currentGoal
+          ? `You are an indoor navigation module. The user's active goal is: "${currentGoal}".
+             Current visual memory: ${JSON.stringify({ landmarks: memoryRef.current.landmarks, hazards: memoryRef.current.hazards })}
+             Identify strictly visible architectural landmarks, signs, and hazards.
+             Also provide strict short navigational commands towards the active goal.
+             Return strictly JSON with:
+             'landmarks_seen' array (short descriptions),
+             'hazards' array,
+             'navigation': {
+               'direction': 'FORWARD|LEFT|RIGHT|TURN_AROUND|ARRIVED|NONE',
+               'message': 'Short concrete action command based on visual context, without explanation. e.g. "Turn left" or "Walk forward".',
+               'target_label': 'name of a visible landmark to look out for, or NONE',
+               'target_box': [ymin, xmin, ymax, xmax] (0-1000) or null
+             }`
+          : `You are an indoor mapping robot. Identify strictly visible architectural landmarks, signs, and hazards.
+             Return JSON with 'landmarks_seen' array (short descriptions like 'Red Double Doors', 'Restroom Sign')
+             and 'hazards' array ('Wet Floor', 'Broken Elevator'). Do not list general objects like 'wall' or 'ceiling'. Respond strictly in JSON.`;
+
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: [
@@ -327,11 +354,7 @@ function SwarmInterface() {
                     mimeType: 'image/jpeg'
                   }
                 },
-                {
-                  text: `You are an indoor mapping robot. Identify strictly visible architectural landmarks, signs, and hazards.
-                  Return JSON with 'landmarks_seen' array (short descriptions like 'Red Double Doors', 'Restroom Sign')
-                  and 'hazards' array ('Wet Floor', 'Broken Elevator'). Do not list general objects like 'wall' or 'ceiling'. Respond strictly in JSON.`
-                }
+                { text: promptText }
               ]
             }
           ]
@@ -340,36 +363,57 @@ function SwarmInterface() {
         const jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
 
-        if (data.landmarks_seen?.length > 0 || data.hazards?.length > 0) {
-          setMemory(prev => {
-            const newLandmarks = Array.from(new Set([...prev.landmarks, ...(data.landmarks_seen || [])]));
-            const newHazards = Array.from(new Set([...prev.hazards, ...(data.hazards || [])]));
+        setMemory(prev => {
+          const newLandmarks = Array.from(new Set([...prev.landmarks, ...(data.landmarks_seen || [])]));
+          const newHazards = Array.from(new Set([...prev.hazards, ...(data.hazards || [])]));
 
-            // Check if we actually found something new to log
-            if (newLandmarks.length > prev.landmarks.length) {
-              addLog(`Scout: Mapped ${data.landmarks_seen.length} new landmarks.`, "success");
-            }
-            if (newHazards.length > prev.hazards.length) {
-              addLog(`Scout: ALERT: Found hazard!`, "warning");
-            }
+          if (newLandmarks.length > prev.landmarks.length) {
+            addLog(`Scout: Mapped ${(data.landmarks_seen || []).length} new landmarks.`, "success");
+          }
+          if (newHazards.length > prev.hazards.length) {
+            addLog(`Scout: ALERT: Found hazard!`, "warning");
+          }
 
-            return {
-              ...prev,
-              landmarks: newLandmarks,
-              hazards: newHazards,
-              state: "Monitoring..."
-            };
-          });
+          return {
+            ...prev,
+            landmarks: newLandmarks,
+            hazards: newHazards,
+            state: currentGoal ? `Tracking goal: ${currentGoal}` : "Monitoring..."
+          };
+        });
+
+        if (data.navigation) {
+          if (data.navigation.direction && data.navigation.direction !== 'NONE') {
+            setActiveDirection(data.navigation.direction);
+          }
+
+          if (data.navigation.target_label && data.navigation.target_label !== 'NONE' && data.navigation.target_box && data.navigation.target_box.length === 4) {
+            setActiveTargets([{ label: data.navigation.target_label, box: data.navigation.target_box }]);
+          } else if (data.navigation.target_label === 'NONE') {
+            setActiveTargets([]);
+          }
+
+          if (data.navigation.message && data.navigation.message !== 'NONE') {
+            setMemory(prev => ({ ...prev, lastAnswer: data.navigation.message }));
+            if (lastSpokenRef.current !== data.navigation.message) {
+              speakNaturalTone(data.navigation.message);
+              lastSpokenRef.current = data.navigation.message;
+              addLog(`Guide: ${data.navigation.message}`, "info");
+            }
+            if (data.navigation.direction === 'ARRIVED') {
+              activeGoalRef.current = '';
+            }
+          }
         }
       } catch (err) {
         console.error("Scout error:", err);
         addLog(`Scout Error: ${err.message || 'Check Console'}`, "error");
       }
 
-      setTimeout(() => { isProcessing = false; }, 2000);
+      setTimeout(() => { isProcessing = false; }, 100);
     };
 
-    intervalId = setInterval(pingScout, 2500); // Increased frequency for "Live" feel
+    intervalId = setInterval(pingScout, 1000); // Higher frequency decisions
     return () => clearInterval(intervalId);
   }, [isScouting, isMoving]);
 
@@ -385,6 +429,9 @@ function SwarmInterface() {
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const question = typeof e === 'string' ? e : userQuery || "Voice Audio attached.";
     if (typeof e !== 'string') setUserQuery('');
+
+    activeGoalRef.current = question;
+    lastSpokenRef.current = '';
 
     addLog(`USER >> ${audioBase64 ? "[AUDIO SENT TO SWARM]" : question}`, "info");
     setActiveSubtitle('');
