@@ -106,6 +106,11 @@ function SwarmInterface() {
   const [isMoving, setIsMoving] = useState(true);
   const [activeSubtitle, setActiveSubtitle] = useState('');
 
+  // Camera State
+  const currentCameraIdRef = useRef(null);
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
       ...prev,
@@ -206,14 +211,39 @@ function SwarmInterface() {
   // Initialize Camera
   useEffect(() => {
     let activeStream = null;
+    let isMounted = true;
+
     async function setupCamera() {
       try {
-        const _stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 } }
-        });
+        const constraints = selectedCameraId
+          ? { video: { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 } } }
+          : { video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } } };
+
+        const _stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isMounted) {
+          _stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        activeStream = _stream;
         if (videoRef.current) {
           videoRef.current.srcObject = _stream;
         }
+
+        // Once permission is granted, list out available cameras
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        setAvailableCameras(videoDevices);
+
+        // Track active camera internally without triggering re-render
+        const activeTrack = _stream.getVideoTracks()[0];
+        const currDev = videoDevices.find(d => d.label === activeTrack.label);
+        if (currDev) {
+          currentCameraIdRef.current = currDev.deviceId;
+        } else if (videoDevices.length > 0) {
+          currentCameraIdRef.current = videoDevices[0].deviceId;
+        }
+
       } catch (err) {
         console.error("Camera error:", err);
         addLog("System: Camera access denied or unavailable.", "error");
@@ -222,11 +252,25 @@ function SwarmInterface() {
     setupCamera();
 
     return () => {
+      isMounted = false;
       if (activeStream) {
         activeStream.getTracks().forEach(t => t.stop());
       }
     };
-  }, []);
+  }, [selectedCameraId]);
+
+  // Handle Cycle Cameras
+  const cycleCamera = () => {
+    if (availableCameras.length <= 1) {
+      addLog("No other cameras found.", "warning");
+      return;
+    }
+    const currentIndex = availableCameras.findIndex(d => d.deviceId === currentCameraIdRef.current);
+    const nextIndex = (currentIndex + 1) % availableCameras.length;
+    const nextCam = availableCameras[nextIndex];
+    setSelectedCameraId(nextCam.deviceId);
+    addLog(`Switched camera to: ${nextCam.label || 'Camera ' + (nextIndex + 1)}`, "info");
+  };
 
   const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return null;
@@ -572,156 +616,180 @@ function SwarmInterface() {
       {/* Main UI Container */}
       <div className="absolute inset-0 p-6 flex flex-col justify-between z-10 transition-all duration-500">
 
-        <div className="bg-black/40 backdrop-blur-2xl px-6 py-3 rounded-2xl flex items-center gap-4 border border-white/10 shadow-lg max-w-[85%]">
-          <BrainCircuit className={`w-8 h-8 ${isScouting ? 'text-[#3898ec] animate-[pulse_2s_ease-in-out_infinite]' : 'text-neutral-500'}`} />
-          <div className="flex flex-col">
-            <span className="text-base font-bold tracking-wide text-white flex items-center gap-2 leading-none">
-              {isScouting ? 'AI Guide Active' : 'AI Guide Inactive'}
-              {isScouting && <div className={`w-2.5 h-2.5 rounded-full ${isMoving ? 'bg-[#3898ec] animate-pulse shadow-[0_0_10px_rgba(56,152,236,0.8)]' : 'bg-yellow-500'}`} />}
-            </span>
-            <span className="text-[10px] text-[#3898ec]/80 font-mono tracking-widest mt-1 uppercase leading-none">
-              Background Swarm Uplink: Monitoring
-            </span>
-          </div>
-        </div>
-      </div>
-
-
-      <div className="flex-1 flex items-center justify-center relative pointer-events-none">
-
-        {/* Subtle Central Reticle when not directing */}
-        {(!activeDirection || activeDirection === 'NONE') && isScouting && (
-          <div className="w-24 h-24 border border-white/20 rounded-full flex items-center justify-center">
-            <div className="w-2 h-2 bg-white/50 rounded-full" />
-          </div>
-        )}
-
-        {/* AR Direction Overlay HUD */}
-        <ARDirectionOverlay direction={activeDirection} instruction={memory.lastAnswer} />
-
-        {/* Live Mode Indicator Overlay */}
-        {liveMode && (
-          <div className="absolute top-10 flex flex-col items-center gap-2 animate-pulse pointer-events-none">
-            <div className="bg-[#3898ec] text-white px-6 py-2 rounded-full font-black tracking-widest text-lg shadow-[0_0_30px_rgba(56,152,236,0.6)] border border-white/20">
-              LIVE CONNECTION
-            </div>
-            <div className="text-[#3898ec] font-mono text-sm tracking-[0.3em] uppercase">VLM VISION UPLINK ACTIVE</div>
-          </div>
-        )}
-
-        {/* Gemini Live Visual Orb */}
-        {(isListening || isSpeaking) && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-all duration-700">
-            <div className={`w-48 h-48 rounded-full blur-3xl ${isListening ? 'orb-listening' : 'orb-glow'}`} />
-            <div className="absolute text-white/40 text-xs font-black tracking-widest uppercase animate-pulse">
-              {isListening ? "Listening..." : "Processing..."}
+        {/* Top Header - User Friendly */}
+        <div className="flex justify-between items-start pointer-events-none mt-2">
+          <div className="bg-black/40 backdrop-blur-2xl px-6 py-3 rounded-2xl flex items-center gap-4 border border-white/10 shadow-lg max-w-[85%]">
+            <BrainCircuit className={`w-8 h-8 ${isScouting ? 'text-[#3898ec] animate-[pulse_2s_ease-in-out_infinite]' : 'text-neutral-500'}`} />
+            <div className="flex flex-col">
+              <span className="text-base font-bold tracking-wide text-white flex items-center gap-2 leading-none">
+                {isScouting ? 'AI Guide Active' : 'AI Guide Inactive'}
+                {isScouting && <div className={`w-2.5 h-2.5 rounded-full ${isMoving ? 'bg-[#3898ec] animate-pulse shadow-[0_0_10px_rgba(56,152,236,0.8)]' : 'bg-yellow-500'}`} />}
+              </span>
+              <span className="text-[10px] text-[#3898ec]/80 font-mono tracking-widest mt-1 uppercase leading-none">
+                {isScouting ? (liveMode ? 'Live Vision Uplink Active' : 'Background Swarm Uplink: Monitoring') : 'Ready to scan'}
+              </span>
             </div>
           </div>
-        )}
-        {/* AR Bounding Box Tracker - Refined */}
-        {activeTargets.map((target, idx) => {
-          const [ymin, xmin, ymax, xmax] = target.box;
-          const top = `${(ymin / 1000) * 100}%`;
-          const left = `${(xmin / 1000) * 100}%`;
-          const height = `${((ymax - ymin) / 1000) * 100}%`;
-          const width = `${((xmax - xmin) / 1000) * 100}%`;
 
-          return (
-            <div
-              key={idx}
-              className="absolute border-4 border-[#3898ec]/80 bg-[#3898ec]/10 shadow-[0_0_30px_rgba(56,152,236,0.3)] rounded-2xl transition-all duration-500 ease-out pointer-events-none z-30"
-              style={{ top, left, width, height }}
-            >
-              {/* Clean Target Pill */}
-              <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-2xl border border-white/10 text-white text-base font-bold px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl whitespace-nowrap">
-                <Crosshair className="w-5 h-5 text-[#3898ec] animate-[spin_4s_linear_infinite]" />
-                {target.label}
-              </div>
-            </div>
-          );
-        })}
-
-      </div>
-
-      {/* Bottom Floating Command Bar */}
-      <div className="w-full flex justify-center sticky bottom-0 z-40">
-        <div className="w-full max-w-lg mb-8 pointer-events-auto">
-
-          {/* Dynamic Subtitles floating directly above the input */}
-          <div className="w-full flex justify-center mb-6 pointer-events-none">
-            {activeSubtitle ? (
-              <div className="bg-black/60 backdrop-blur-xl border border-white/10 text-white font-medium text-2xl px-8 py-4 rounded-3xl text-center shadow-2xl">
-                {activeSubtitle}
-              </div>
-            ) : memory.lastAnswer ? (
-              <div className="bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 font-medium text-lg px-6 py-3 rounded-2xl max-w-[85%] text-center opacity-80 transition-opacity">
-                "{memory.lastAnswer}"
-              </div>
-            ) : null}
-          </div>
-
-          {/* Search / Voice unified pill */}
-          <div className="flex gap-3">
-            <form onSubmit={handleAskSwarm} className="relative flex-1 flex items-center group">
-              <input
-                type="text"
-                value={userQuery}
-                onChange={(e) => setUserQuery(e.target.value)}
-                placeholder={isListening ? "Actively listening..." : "Where would you like to go?"}
-                className={`w-full bg-black/50 backdrop-blur-3xl border border-white/20 focus:border-[#3898ec] focus:bg-black/80 rounded-full pl-6 pr-16 py-4 text-lg text-white placeholder-neutral-400 shadow-2xl outline-none transition-all duration-300 ${isListening ? 'bg-[#3898ec]/20 border-[#3898ec] placeholder-white' : ''}`}
-              />
-              <button type="submit" className="absolute right-2 p-2.5 bg-white hover:bg-gray-200 rounded-full transition-all duration-300 shadow-lg group-focus-within:bg-[#3898ec] group-focus-within:text-white text-black">
-                <ArrowUp className="w-6 h-6" strokeWidth={3} />
+          <div className="flex items-center gap-3">
+            {availableCameras.length > 1 && (
+              <button
+                onClick={cycleCamera}
+                className="pointer-events-auto p-3 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 text-white hover:bg-white/10 transition-all shadow-lg"
+                title="Switch Camera"
+              >
+                <RotateCcw className="w-5 h-5" />
               </button>
-            </form>
+            )}
 
             <button
-              type="button"
-              onClick={toggleLiveMode}
-              className={`p-5 rounded-full transition-all shadow-2xl flex items-center justify-center gap-3 backdrop-blur-3xl border
-                    ${liveMode ? 'bg-[#3898ec] text-white border-white/40 animate-[pulse_1.5s_ease-in-out_infinite] shadow-[0_0_30px_rgba(56,152,236,0.6)]' :
-                  'bg-black/50 border border-white/20 hover:bg-black/70 text-white'}`}
-              title={liveMode ? "Gemini Live Active" : "Start Gemini Live Session"}
+              onClick={() => setIsScouting(!isScouting)}
+              className={`pointer-events-auto px-5 py-3 flex items-center gap-2 rounded-full backdrop-blur-2xl transition-all shadow-lg text-sm font-bold tracking-wider
+                 ${isScouting
+                  ? 'bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30'
+                  : 'bg-[#3898ec] text-white hover:bg-blue-500 shadow-[0_0_20px_rgba(56,152,236,0.5)]'}`}
             >
-              <Mic className="w-7 h-7" strokeWidth={liveMode ? 3 : 2} />
-              {liveMode && <span className="text-xs font-black tracking-widest hidden md:block">LIVE</span>}
+              <Power className="w-5 h-5" />
+              {isScouting ? 'END TOUR' : 'START'}
             </button>
           </div>
+        </div>
 
-          {/* Compact Console Overlay (Under input) */}
-          <div className="mt-4 flex flex-col gap-2 pointer-events-none">
-            <div className="flex items-center gap-2 px-3">
-              <Activity className="w-3 h-3 text-[#3898ec] animate-pulse" />
-              <span className="text-[9px] font-black tracking-[0.2em] text-[#3898ec]/80 uppercase">Telemetry Feed</span>
+        <div className="flex-1 flex items-center justify-center relative pointer-events-none">
+
+          {/* Subtle Central Reticle when not directing */}
+          {(!activeDirection || activeDirection === 'NONE') && isScouting && (
+            <div className="w-24 h-24 border border-white/20 rounded-full flex items-center justify-center">
+              <div className="w-2 h-2 bg-white/50 rounded-full" />
             </div>
-            <div className="w-full glass-panel rounded-xl border border-white/5 overflow-hidden max-h-24 pointer-events-auto shadow-2xl">
-              <div className="overflow-y-auto p-2 max-h-24 custom-scrollbar">
-                <div className="space-y-1">
-                  {!memory.logs || memory.logs.length === 0 ? (
-                    <div className="text-[9px] text-zinc-500 font-mono italic px-2">Awaiting telemetry...</div>
-                  ) : (
-                    memory.logs.map((log, i) => (
-                      <div key={i} className={`flex items-start gap-3 py-1 px-2 rounded-md transition-all duration-300 ${log.type === 'success' ? 'bg-green-500/5' :
-                        log.type === 'warning' ? 'bg-yellow-500/5' :
-                          log.type === 'error' ? 'bg-red-500/5' : 'bg-blue-500/10'
-                        }`}>
-                        <div className={`w-1 h-1 rounded-full mt-1.5 shrink-0 ${log.type === 'success' ? 'bg-green-400' :
-                          log.type === 'warning' ? 'bg-yellow-400' :
-                            log.type === 'error' ? 'bg-red-400' : 'bg-[#3898ec]'
-                          }`} />
-                        <p className="text-[9px] text-white/70 font-mono leading-tight flex-1 min-w-0 break-words">{log.msg}</p>
-                        <span className="text-[7px] text-white/20 font-mono shrink-0">{log.time}</span>
-                      </div>
-                    ))
-                  )}
-                  <div ref={logsEndRef} />
+          )}
+
+          {/* AR Direction Overlay HUD */}
+          <ARDirectionOverlay direction={activeDirection} instruction={memory.lastAnswer} />
+
+          {/* Live Mode Indicator Overlay */}
+          {liveMode && (
+            <div className="absolute top-10 flex flex-col items-center gap-2 animate-pulse pointer-events-none">
+              <div className="bg-[#3898ec] text-white px-6 py-2 rounded-full font-black tracking-widest text-lg shadow-[0_0_30px_rgba(56,152,236,0.6)] border border-white/20">
+                LIVE CONNECTION
+              </div>
+              <div className="text-[#3898ec] font-mono text-sm tracking-[0.3em] uppercase">VLM VISION UPLINK ACTIVE</div>
+            </div>
+          )}
+
+          {/* Gemini Live Visual Orb */}
+          {(isListening || isSpeaking) && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-all duration-700">
+              <div className={`w-48 h-48 rounded-full blur-3xl ${isListening ? 'orb-listening' : 'orb-glow'}`} />
+              <div className="absolute text-white/40 text-xs font-black tracking-widest uppercase animate-pulse">
+                {isListening ? "Listening..." : "Processing..."}
+              </div>
+            </div>
+          )}
+          {/* AR Bounding Box Tracker - Refined */}
+          {activeTargets.map((target, idx) => {
+            const [ymin, xmin, ymax, xmax] = target.box;
+            const top = `${(ymin / 1000) * 100}%`;
+            const left = `${(xmin / 1000) * 100}%`;
+            const height = `${((ymax - ymin) / 1000) * 100}%`;
+            const width = `${((xmax - xmin) / 1000) * 100}%`;
+
+            return (
+              <div
+                key={idx}
+                className="absolute border-4 border-[#3898ec]/80 bg-[#3898ec]/10 shadow-[0_0_30px_rgba(56,152,236,0.3)] rounded-2xl transition-all duration-500 ease-out pointer-events-none z-30"
+                style={{ top, left, width, height }}
+              >
+                {/* Clean Target Pill */}
+                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-2xl border border-white/10 text-white text-base font-bold px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl whitespace-nowrap">
+                  <Crosshair className="w-5 h-5 text-[#3898ec] animate-[spin_4s_linear_infinite]" />
+                  {target.label}
+                </div>
+              </div>
+            );
+          })}
+
+        </div>
+
+        {/* Bottom Floating Command Bar */}
+        <div className="w-full flex justify-center sticky bottom-0 z-40">
+          <div className="w-full max-w-lg mb-8 pointer-events-auto">
+
+            {/* Dynamic Subtitles floating directly above the input */}
+            <div className="w-full flex justify-center mb-6 pointer-events-none">
+              {activeSubtitle ? (
+                <div className="bg-black/60 backdrop-blur-xl border border-white/10 text-white font-medium text-2xl px-8 py-4 rounded-3xl text-center shadow-2xl">
+                  {activeSubtitle}
+                </div>
+              ) : memory.lastAnswer ? (
+                <div className="bg-black/40 backdrop-blur-xl border border-white/10 text-white/90 font-medium text-lg px-6 py-3 rounded-2xl max-w-[85%] text-center opacity-80 transition-opacity">
+                  "{memory.lastAnswer}"
+                </div>
+              ) : null}
+            </div>
+
+            {/* Search / Voice unified pill */}
+            <div className="flex gap-3">
+              <form onSubmit={handleAskSwarm} className="relative flex-1 flex items-center group">
+                <input
+                  type="text"
+                  value={userQuery}
+                  onChange={(e) => setUserQuery(e.target.value)}
+                  placeholder={isListening ? "Actively listening..." : "Where would you like to go?"}
+                  className={`w-full bg-black/50 backdrop-blur-3xl border border-white/20 focus:border-[#3898ec] focus:bg-black/80 rounded-full pl-6 pr-16 py-4 text-lg text-white placeholder-neutral-400 shadow-2xl outline-none transition-all duration-300 ${isListening ? 'bg-[#3898ec]/20 border-[#3898ec] placeholder-white' : ''}`}
+                />
+                <button type="submit" className="absolute right-2 p-2.5 bg-white hover:bg-gray-200 rounded-full transition-all duration-300 shadow-lg group-focus-within:bg-[#3898ec] group-focus-within:text-white text-black">
+                  <ArrowUp className="w-6 h-6" strokeWidth={3} />
+                </button>
+              </form>
+
+              <button
+                type="button"
+                onClick={toggleLiveMode}
+                className={`p-5 rounded-full transition-all shadow-2xl flex items-center justify-center gap-3 backdrop-blur-3xl border
+                    ${liveMode ? 'bg-[#3898ec] text-white border-white/40 animate-[pulse_1.5s_ease-in-out_infinite] shadow-[0_0_30px_rgba(56,152,236,0.6)]' :
+                    'bg-black/50 border border-white/20 hover:bg-black/70 text-white'}`}
+                title={liveMode ? "Gemini Live Active" : "Start Gemini Live Session"}
+              >
+                <Mic className="w-7 h-7" strokeWidth={liveMode ? 3 : 2} />
+                {liveMode && <span className="text-xs font-black tracking-widest hidden md:block">LIVE</span>}
+              </button>
+            </div>
+
+            {/* Compact Console Overlay (Under input) */}
+            <div className="mt-4 flex flex-col gap-2 pointer-events-none">
+              <div className="flex items-center gap-2 px-3">
+                <Activity className="w-3 h-3 text-[#3898ec] animate-pulse" />
+                <span className="text-[9px] font-black tracking-[0.2em] text-[#3898ec]/80 uppercase">Telemetry Feed</span>
+              </div>
+              <div className="w-full glass-panel rounded-xl border border-white/5 overflow-hidden max-h-24 pointer-events-auto shadow-2xl">
+                <div className="overflow-y-auto p-2 max-h-24 custom-scrollbar">
+                  <div className="space-y-1">
+                    {!memory.logs || memory.logs.length === 0 ? (
+                      <div className="text-[9px] text-zinc-500 font-mono italic px-2">Awaiting telemetry...</div>
+                    ) : (
+                      memory.logs.map((log, i) => (
+                        <div key={i} className={`flex items-start gap-3 py-1 px-2 rounded-md transition-all duration-300 ${log.type === 'success' ? 'bg-green-500/5' :
+                          log.type === 'warning' ? 'bg-yellow-500/5' :
+                            log.type === 'error' ? 'bg-red-500/5' : 'bg-blue-500/10'
+                          }`}>
+                          <div className={`w-1 h-1 rounded-full mt-1.5 shrink-0 ${log.type === 'success' ? 'bg-green-400' :
+                            log.type === 'warning' ? 'bg-yellow-400' :
+                              log.type === 'error' ? 'bg-red-400' : 'bg-[#3898ec]'
+                            }`} />
+                          <p className="text-[9px] text-white/70 font-mono leading-tight flex-1 min-w-0 break-words">{log.msg}</p>
+                          <span className="text-[7px] text-white/20 font-mono shrink-0">{log.time}</span>
+                        </div>
+                      ))
+                    )}
+                    <div ref={logsEndRef} />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-
     </div>
   );
 }
