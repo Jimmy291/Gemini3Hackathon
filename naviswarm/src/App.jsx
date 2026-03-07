@@ -411,10 +411,14 @@ function SwarmInterface() {
 
                 INSTRUCTIONS:
                 1. Provide a human-like, conversational response (1-2 sentences).
-                2. If the goal is not visible in the LIVE view but is in memory, identify a visible landmark from the LIVE view that leads towards it.
-                3. Direct the user towards that visible landmark as a sub-goal (e.g., "The toilet is past the sofa, please move towards the sofa").
-                4. If no visible landmarks lead to the goal, provide general directions from memory.
-                5. ALWAYS return the TARGET_LABEL and TARGET_BOX for the landmark you are currently using as a waypoint if it is visible in the LIVE view.
+                2. If the goal is NOT in the LIVE view but IS in memory:
+                   - Identify a visible landmark as a waypoint.
+                   - Suggest a movement action (e.g., "Forward", "Turn Left") to get closer to that memory location.
+                3. If the goal is NOT in memory at all:
+                   - Suggest exploratory actions (e.g., "I haven't mapped the toilet yet, try walking further down the hall so I can scan more areas").
+                   - Encourage the user to "Forward" or "Scan Left/Right" to discover the target.
+                4. ALWAYS return the DIRECTION (FORWARD, LEFT, RIGHT, TURN_AROUND) that best helps the user move towards the goal or explore new areas.
+                5. If a landmark waypoint is used, return its TARGET_LABEL and TARGET_BOX.
 
                 YOU MUST STRICTLY USE THIS EXACT MULTI-LINE FORMAT (Do not use JSON or Markdown):
                 THOUGHT: <Analyze where the goal is relative to visible landmarks and explain your reasoning steps>
@@ -539,7 +543,12 @@ function SwarmInterface() {
         systemInstruction: `You are the NaviSwarm LIVE Coordinator. 
         Your goal is to guide the user in real-time. 
         Use the spatial memory database provided below to think about where things are.
-        If the user asks for a location not visible, identify visible landmarks to use as waypoints.
+        
+        If the target is NOT VISIBLE but IS in memory:
+        Suggest specific movement (e.g., "Rotate 180 degrees", "Head towards the visible Sofa").
+        
+        If the target is NOT in memory at all:
+        Suggest exploratory actions (e.g., "I haven't seen that yet, let's explore deeper into the corridor", "Scan to the Left").
         
         Spatial Memory Database: ${JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards })}`,
       };
