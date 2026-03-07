@@ -131,6 +131,11 @@ function SwarmInterface() {
   const [isMoving, setIsMoving] = useState(true);
   const [activeSubtitle, setActiveSubtitle] = useState('');
 
+  // Camera State
+  const currentCameraIdRef = useRef(null);
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
       ...prev,
@@ -231,14 +236,39 @@ function SwarmInterface() {
   // Initialize Camera
   useEffect(() => {
     let activeStream = null;
+    let isMounted = true;
+
     async function setupCamera() {
       try {
-        const _stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 } }
-        });
+        const constraints = selectedCameraId
+          ? { video: { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 } } }
+          : { video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } } };
+
+        const _stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isMounted) {
+          _stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        activeStream = _stream;
         if (videoRef.current) {
           videoRef.current.srcObject = _stream;
         }
+
+        // Once permission is granted, list out available cameras
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        setAvailableCameras(videoDevices);
+
+        // Track active camera internally without triggering re-render
+        const activeTrack = _stream.getVideoTracks()[0];
+        const currDev = videoDevices.find(d => d.label === activeTrack.label);
+        if (currDev) {
+          currentCameraIdRef.current = currDev.deviceId;
+        } else if (videoDevices.length > 0) {
+          currentCameraIdRef.current = videoDevices[0].deviceId;
+        }
+
       } catch (err) {
         console.error("Camera error:", err);
         addLog("System: Camera access denied or unavailable.", "error");
@@ -247,11 +277,25 @@ function SwarmInterface() {
     setupCamera();
 
     return () => {
+      isMounted = false;
       if (activeStream) {
         activeStream.getTracks().forEach(t => t.stop());
       }
     };
-  }, []);
+  }, [selectedCameraId]);
+
+  // Handle Cycle Cameras
+  const cycleCamera = () => {
+    if (availableCameras.length <= 1) {
+      addLog("No other cameras found.", "warning");
+      return;
+    }
+    const currentIndex = availableCameras.findIndex(d => d.deviceId === currentCameraIdRef.current);
+    const nextIndex = (currentIndex + 1) % availableCameras.length;
+    const nextCam = availableCameras[nextIndex];
+    setSelectedCameraId(nextCam.deviceId);
+    addLog(`Switched camera to: ${nextCam.label || 'Camera ' + (nextIndex + 1)}`, "info");
+  };
 
   const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return null;
@@ -556,16 +600,28 @@ function SwarmInterface() {
             </div>
           </div>
 
-          <button
-            onClick={() => setIsScouting(!isScouting)}
-            className={`pointer-events-auto px-5 py-3 flex items-center gap-2 rounded-full backdrop-blur-2xl transition-all shadow-lg text-sm font-bold tracking-wider
-               ${isScouting
-                ? 'bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30'
-                : 'bg-[#3898ec] text-white hover:bg-blue-500 shadow-[0_0_20px_rgba(56,152,236,0.5)]'}`}
-          >
-            <Power className="w-5 h-5" />
-            {isScouting ? 'END TOUR' : 'START'}
-          </button>
+          <div className="flex items-center gap-3">
+            {availableCameras.length > 1 && (
+              <button
+                onClick={cycleCamera}
+                className="pointer-events-auto p-3 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 text-white hover:bg-white/10 transition-all shadow-lg"
+                title="Switch Camera"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+            )}
+
+            <button
+              onClick={() => setIsScouting(!isScouting)}
+              className={`pointer-events-auto px-5 py-3 flex items-center gap-2 rounded-full backdrop-blur-2xl transition-all shadow-lg text-sm font-bold tracking-wider
+                 ${isScouting
+                  ? 'bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30'
+                  : 'bg-[#3898ec] text-white hover:bg-blue-500 shadow-[0_0_20px_rgba(56,152,236,0.5)]'}`}
+            >
+              <Power className="w-5 h-5" />
+              {isScouting ? 'END TOUR' : 'START'}
+            </button>
+          </div>
         </div>
 
 
