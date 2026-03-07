@@ -6,7 +6,7 @@ import { AudioRecorder, AudioPlayer } from './lib/audio-utils.js';
 // ------------------------------------------------------------------
 // API KEY CONFIGURATION
 // Paste your Gemini API key directly here.
-const API_KEY = "AIzaSyAl7iJv_mcARsmJtE10CpbRVrznftLWIYg";
+const API_KEY = "AIzaSyBGLosDsHIRQBsFT2JV3FUlGmlPUS2mvac";
 // ------------------------------------------------------------------
 
 export default function App() {
@@ -410,19 +410,17 @@ function SwarmInterface() {
                 (If an image is attached, it's the user's current LIVE view).
 
                 INSTRUCTIONS:
-                1. Provide a human-like, conversational response (1-2 sentences).
+                1. Provide ONLY concrete actions as the MESSAGE (e.g., "Walk straight", "Turn left", "Stop"). Do NOT provide explanations or conversational text.
                 2. If the goal is NOT in the LIVE view but IS in memory:
                    - Identify a visible landmark as a waypoint.
-                   - Suggest a movement action (e.g., "Forward", "Turn Left") to get closer to that memory location.
+                   - Suggest a movement action to get closer to that memory location.
                 3. If the goal is NOT in memory at all:
-                   - Suggest exploratory actions (e.g., "I haven't mapped the toilet yet, try walking further down the hall so I can scan more areas").
-                   - Encourage the user to "Forward" or "Scan Left/Right" to discover the target.
-                4. ALWAYS return the DIRECTION (FORWARD, LEFT, RIGHT, TURN_AROUND) that best helps the user move towards the goal or explore new areas.
+                   - Suggest exploratory actions (e.g., "Scan the area", "Walk forward").
+                4. ALWAYS return the DIRECTION (FORWARD, LEFT, RIGHT, TURN_AROUND, ARRIVED) that best helps the user move towards the goal or explore new areas.
                 5. If a landmark waypoint is used, return its TARGET_LABEL and TARGET_BOX.
 
-                YOU MUST STRICTLY USE THIS EXACT MULTI-LINE FORMAT (Do not use JSON or Markdown):
-                THOUGHT: <Analyze where the goal is relative to visible landmarks and explain your reasoning steps>
-                MESSAGE: <Your conversational text>
+                YOU MUST STRICTLY USE THIS EXACT MULTI-LINE FORMAT (Do not use JSON or Markdown, and do not include thoughts):
+                MESSAGE: <Concrete action command ONLY>
                 DIRECTION: <FORWARD|LEFT|RIGHT|TURN_AROUND|ARRIVED|NONE>
                 TARGET_LABEL: <The name of the visible landmark/waypoint or NONE>
                 TARGET_BOX: <ymin,xmin,ymax,xmax values 0-1000 for the visible TARGET_LABEL or NONE>
@@ -540,15 +538,34 @@ function SwarmInterface() {
 
       const config = {
         responseModalities: ["audio"],
+        tools: [{
+          functionDeclarations: [
+            {
+              name: "update_direction",
+              description: "Update the directional overlay on the user interface screen based on your movement command.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  direction: {
+                    type: "STRING",
+                    description: "The movement direction",
+                    enum: ["FORWARD", "LEFT", "RIGHT", "TURN_AROUND", "ARRIVED", "NONE"]
+                  }
+                },
+                required: ["direction"]
+              }
+            }
+          ]
+        }],
         systemInstruction: `You are the NaviSwarm LIVE Coordinator. 
         Your goal is to guide the user in real-time. 
         Use the spatial memory database provided below to think about where things are.
         
-        If the target is NOT VISIBLE but IS in memory:
-        Suggest specific movement (e.g., "Rotate 180 degrees", "Head towards the visible Sofa").
-        
-        If the target is NOT in memory at all:
-        Suggest exploratory actions (e.g., "I haven't seen that yet, let's explore deeper into the corridor", "Scan to the Left").
+        INSTRUCTIONS:
+        1. Speak ONLY concrete actions (e.g., "Walk straight", "Turn left"). Do NOT provide explanations, logic, or conversational filler.
+        2. Once you determine the action, you MUST ALSO call the 'update_direction' tool to update the on-screen AR directional overlay.
+        3. If the target is NOT VISIBLE but IS in memory: Suggest specific movement to get closer.
+        4. If the target is NOT in memory at all: Suggest exploratory actions.
         
         Spatial Memory Database: ${JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards })}`,
       };
@@ -571,6 +588,26 @@ function SwarmInterface() {
               // Show text subtitle too
               setActiveSubtitle(part.text);
               setTimeout(() => setActiveSubtitle(''), 3000);
+            } else if (part.functionCall) {
+              if (part.functionCall.name === 'update_direction') {
+                const args = part.functionCall.args;
+                if (args && args.direction) {
+                  setActiveDirection(args.direction);
+                }
+
+                // Optional: send tool response to avoid session stalling
+                if (liveSessionRef.current) {
+                  liveSessionRef.current.send({
+                    toolResponse: {
+                      functionResponses: [{
+                        id: part.functionCall.id,
+                        name: part.functionCall.name,
+                        response: { result: "ok" }
+                      }]
+                    }
+                  }).catch(e => { /* ignore */ });
+                }
+              }
             }
           }
         }
