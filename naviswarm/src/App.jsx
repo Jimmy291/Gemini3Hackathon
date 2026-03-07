@@ -106,6 +106,8 @@ function SwarmInterface() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const logsEndRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   // Motion Detection Refs
   const lastOrientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
@@ -124,12 +126,53 @@ function SwarmInterface() {
   const [isListening, setIsListening] = useState(false);
   const [activeTargets, setActiveTargets] = useState([]); // [{ label, box: [y1, x1, y2, x2] }]
   const [isMoving, setIsMoving] = useState(true);
+  const [activeSubtitle, setActiveSubtitle] = useState('');
 
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
       ...prev,
       logs: [...prev.logs, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }), msg, type }]
     }));
+  };
+
+  // Helper to sync subtitles based on external audio duration
+  const startSubtitleSync = (text, durationMs) => {
+    setActiveSubtitle('');
+    clearTimeout(window.subtitleTimeout);
+    clearInterval(window.subtitleInterval);
+
+    const words = text.split(' ');
+    const msPerWord = durationMs / words.length;
+    let currentIndex = 0;
+
+    window.subtitleInterval = setInterval(() => {
+      if (currentIndex < words.length) {
+        setActiveSubtitle(words.slice(0, currentIndex + 1).join(' '));
+        currentIndex++;
+      } else {
+        clearInterval(window.subtitleInterval);
+        window.subtitleTimeout = setTimeout(() => {
+          setActiveSubtitle('');
+        }, 2000);
+      }
+    }, msPerWord);
+  };
+
+  const speakNaturalTone = (text) => {
+    if (!text || text.trim() === '') return;
+
+    // Direct Web Speech API Synthesis
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.05; // Slightly faster for techy feel
+
+      // Start subtitle sync based on approximate reading duration
+      const words = text.split(' ').length;
+      const durationMs = (words / 2.5) * 1000; // ~2.5 words per second
+      startSubtitleSync(text, durationMs);
+
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   // Auto-scroll logs
@@ -293,85 +336,114 @@ function SwarmInterface() {
 
     intervalId = setInterval(pingScout, 4000); // Ping every 4 seconds
     return () => clearInterval(intervalId);
-  }, [isScouting]);
+  }, [isScouting, isMoving]);
 
   // Coordinator handles the user question
-  const handleAskSwarm = async (e) => {
-    e.preventDefault();
-    if (!userQuery.trim() || !API_KEY) return;
+  const handleAskSwarm = async (e, audioBase64 = null, audioMimeType = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!userQuery.trim() && !audioBase64 && !API_KEY) return;
+
+    // Cancel any currently playing audio loops
+    clearInterval(window.subtitleInterval);
 
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     setActiveAgent('coordinator');
-    const question = typeof e === 'string' ? e : userQuery;
+    const question = typeof e === 'string' ? e : userQuery || "Voice Audio attached.";
     if (typeof e !== 'string') setUserQuery('');
 
-    addLog(`USER >> ${question}`, "info");
+    addLog(`USER >> ${audioBase64 ? "[AUDIO SENT TO SWARM]" : question}`, "info");
     setMemory(prev => ({ ...prev, state: "PROCESSING NEURAL PATHWAYS..." }));
 
     try {
       const db = JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards });
       const frameBase64 = captureFrame();
 
-      const response = await ai.models.generateContent({
+      const responseStream = await ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: [
           {
             role: 'user',
             parts: [
+              ...(audioBase64 ? [{ inlineData: { data: audioBase64, mimeType: audioMimeType } }] : []),
               ...(frameBase64 ? [{ inlineData: { data: frameBase64, mimeType: 'image/jpeg' } }] : []),
               {
                 text: `You are the NaviSwarm Coordinator Agent. The user asks: "${question}". 
+                (If an audio voice file is attached, LISTEN CAREFULLY to the audio instead to dictate the objective).
                 
                 Current visual spatial memory database: ${db}
                 (If an image is attached, it's the user's current LIVE view).
                 
-                Provide human-like, concise navigation instructions (max 2 sentences).
-                If you see the goal in the live image, guide them directly.
-                If it's in the memory database, tell them how to get there.
-                If nowhere to be found, ask them to find a floorplan or map.
-
-                RESPOND STRICTLY IN JSON format:
-                {
-                  "instruction": "Your human-like answer here",
-                  "ar_direction": "FORWARD", // MUST BE EXACTLY ONE OF: FORWARD, LEFT, RIGHT, TURN_AROUND, ARRIVED, or NONE
-                  "target_identified": true, // false if not visible
-                  "target_label": "Exit Sign", // null if not visible
-                  "target_bounding_box": [ymin, xmin, ymax, xmax] // Values 0 to 1000 if visible, exactly wrapping the object. Null if not visible.
-                }`
+                INSTRUCTIONS:
+                1. Provide a human-like, conversational response (1-2 sentences).
+                2. If the goal is in the live image, guide them to it.
+                3. If it's in the memory database, tell them how to get there.
+                
+                YOU MUST STRICTLY USE THIS EXACT MULTI-LINE FORMAT (Do not use JSON or Markdown):
+                MESSAGE: <Your conversational text>
+                DIRECTION: <FORWARD|LEFT|RIGHT|TURN_AROUND|ARRIVED|NONE>
+                TARGET_LABEL: <Target Name or NONE>
+                TARGET_BOX: <ymin,xmin,ymax,xmax values 0-1000 or NONE>
+                `
               }
             ]
           }
         ]
       });
 
-      // Parse JSON from response
-      const jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const data = JSON.parse(jsonStr);
+      let fullResponseString = '';
+      let spokenMessage = '';
+      let sentenceBuffer = '';
 
-      const answer = data.instruction || "Could not parse navigation instructions.";
-      const direction = data.ar_direction || "NONE";
+      for await (const chunk of responseStream) {
+        const chunkText = chunk.text;
+        fullResponseString += chunkText;
 
+        const msgMatch = fullResponseString.match(/MESSAGE:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
+        if (msgMatch) {
+          const currentMessage = msgMatch[1];
+          const newText = currentMessage.substring(spokenMessage.length + sentenceBuffer.length);
+          if (newText) {
+            sentenceBuffer += newText;
+            setMemory(prev => ({ ...prev, state: `COORDINATOR: ${currentMessage}` }));
+
+            // Match chunked sentences for smooth streaming TTS
+            const sentenceMatch = sentenceBuffer.match(/^.*?[.!?](?:\s|$)/);
+            if (sentenceMatch) {
+              const sentence = sentenceMatch[0];
+              speakNaturalTone(sentence);
+              spokenMessage += sentence;
+              sentenceBuffer = sentenceBuffer.substring(sentence.length);
+            }
+          }
+        }
+      }
+
+      // Flush remaining text
+      if (sentenceBuffer.trim().length > 0) {
+        speakNaturalTone(sentenceBuffer);
+      }
+
+      // Metadata parsing
+      const dirMatch = fullResponseString.match(/DIRECTION:\s*([A-Za-z_]+)/);
+      const labelMatch = fullResponseString.match(/TARGET_LABEL:\s*(.*)/);
+      const boxMatch = fullResponseString.match(/TARGET_BOX:\s*([0-9,]+)/);
+
+      const direction = dirMatch ? dirMatch[1].trim() : 'NONE';
       setActiveDirection(direction);
 
-      // Update Bounding Box Overlays
-      if (data.target_identified && data.target_bounding_box) {
-        setActiveTargets([{
-          label: data.target_label || "TARGET",
-          box: data.target_bounding_box
-        }]);
+      if (labelMatch && boxMatch && labelMatch[1].trim() !== 'NONE' && boxMatch[1].trim() !== 'NONE') {
+        const coords = boxMatch[1].trim().split(',').map(Number);
+        if (coords.length === 4) {
+          setActiveTargets([{ label: labelMatch[1].trim(), box: coords }]);
+        }
       } else {
         setActiveTargets([]);
       }
 
-      addLog(`Coordinator: ${answer}`, "success");
-      setMemory(prev => ({ ...prev, state: `AR HUD POINTING: ${direction}` }));
-
-      // Speak the response natively!
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(answer);
-        utterance.rate = 1.1; // Fast, techy feel
-        window.speechSynthesis.speak(utterance);
-      }
+      // Restore full message to the visual log terminal
+      const finalMsgMatch = fullResponseString.match(/MESSAGE:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
+      const finalMsg = finalMsgMatch ? finalMsgMatch[1].trim() : "Audio Reply Streamed.";
+      addLog(`Coordinator: ${finalMsg}`, "success");
 
     } catch (err) {
       console.error(err);
@@ -379,43 +451,59 @@ function SwarmInterface() {
     }
   };
 
-  const startVoiceCommand = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      addLog("Voice Recon: System not supported.", "error");
+  const toggleVoiceCommand = async () => {
+    // If already listening, stop recording
+    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsListening(false);
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    // Start recording audio
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-    recognition.onstart = () => {
+      mediaRecorder.addEventListener("dataavailable", event => {
+        audioChunksRef.current.push(event.data);
+      });
+
+      mediaRecorder.addEventListener("stop", () => {
+        setIsListening(false);
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+        addLog("Audio captured, routing to Gemini...", "info");
+
+        // Convert Blob to Base64
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          const base64Data = reader.result.split(',')[1];
+          handleAskSwarm(null, base64Data, audioBlob.type);
+        };
+
+        // Turn off mic tracks
+        stream.getTracks().forEach(track => track.stop());
+      });
+
       setIsListening(true);
       setActiveAgent('coordinator');
-    };
+      mediaRecorder.start();
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setUserQuery(transcript);
-      // Automatically trigger the agent reasoning after a brief pause to show the text
+      // Auto-stop after 5 seconds limit
       setTimeout(() => {
-        handleAskSwarm(transcript);
-      }, 500);
-    };
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setIsListening(false);
+        }
+      }, 5000);
 
-    recognition.onerror = (err) => {
-      console.error("Speech Error:", err);
+    } catch (err) {
+      console.error("Audio Recording Error:", err);
       setIsListening(false);
-      addLog(`Voice Error: ${err.error}`, "error");
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.start();
+      addLog(`Mic Error: ${err.message || 'Permission denied'}`, "error");
+    }
   };
 
   return (
@@ -518,6 +606,16 @@ function SwarmInterface() {
             );
           })}
 
+          {/* Cinematic Word-by-Word Subtitles */}
+          {activeSubtitle && (
+            <div className="absolute bottom-[28%] left-1/2 -translate-x-1/2 w-4/5 text-center pointer-events-none z-50">
+              <span className="bg-black/70 backdrop-blur-md text-white font-mono text-lg md:text-xl px-4 py-2 leading-relaxed tracking-wider shadow-[0_0_20px_rgba(56,152,236,0.3)] border-l-4 border-[#3898ec]">
+                {activeSubtitle}
+                <span className="w-2 h-5 inline-block bg-[#3898ec] animate-[pulse_0.5s_infinite] ml-2 align-middle"></span>
+              </span>
+            </div>
+          )}
+
         </div>
 
         {/* Bottom Swarm UI Dashboard */}
@@ -596,8 +694,8 @@ function SwarmInterface() {
 
             <button
               type="button"
-              onClick={startVoiceCommand}
-              className={`p-4 rounded-sm transition-all flex items-center justify-center border ${isListening ? 'bg-purple-500/20 border-purple-500 animate-pulse shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
+              onClick={toggleVoiceCommand}
+              className={`p-4 rounded-sm transition-all flex items-center justify-center border ${isListening ? 'bg-purple-500/20 border-purple-500 animate-[pulse_1s_infinite] shadow-[0_0_20px_rgba(168,85,247,0.4)]' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
               title="Voice Control"
             >
               <Mic className={`w-5 h-5 ${isListening ? 'text-purple-400' : 'text-neutral-400'}`} />
