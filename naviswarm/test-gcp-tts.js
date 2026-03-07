@@ -1,4 +1,4 @@
-const API_KEY = "AIzaSyBGLosDsHIRQBsFT2JV3FUlGmlPUS2mvac";
+const API_KEY = "AIzaSy...";
 
 async function run() {
     try {
