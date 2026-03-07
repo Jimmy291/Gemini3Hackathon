@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle, Crosshair, Power, ArrowUp, ZapOff } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { AudioRecorder, AudioPlayer } from './lib/audio-utils.js';
