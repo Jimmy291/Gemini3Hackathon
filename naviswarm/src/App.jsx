@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle } from 'lucide-react';
+import { Camera, Map, Compass, Mic, Navigation, Zap, ShieldAlert, KeyRound, BrainCircuit, Activity, ChevronsUp, ChevronsDown, ChevronsRight, ChevronsLeft, RotateCcw, CheckCircle, Crosshair } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 // ------------------------------------------------------------------
 // API KEY CONFIGURATION
 // Paste your Gemini API key directly here.
-const API_KEY = "AIzaSyAupyIL__n1kzspxvDJ4WyAyv-zLgdNbwQ";
+const API_KEY = "AIzaSyAl7iJv_mcARsmJtE10CpbRVrznftLWIYg";
 // ------------------------------------------------------------------
 
 export default function App() {
@@ -107,6 +107,10 @@ function SwarmInterface() {
   const canvasRef = useRef(null);
   const logsEndRef = useRef(null);
 
+  // Motion Detection Refs
+  const lastOrientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
+  const lastMotionRef = useRef(Date.now());
+
   const [memory, setMemory] = useState({
     landmarks: [],
     hazards: [],
@@ -118,6 +122,8 @@ function SwarmInterface() {
   const [activeAgent, setActiveAgent] = useState('scout'); // scout, cartographer, coordinator
   const [activeDirection, setActiveDirection] = useState('NONE');
   const [isListening, setIsListening] = useState(false);
+  const [activeTargets, setActiveTargets] = useState([]); // [{ label, box: [y1, x1, y2, x2] }]
+  const [isMoving, setIsMoving] = useState(true);
 
   const addLog = (msg, type = "info") => {
     setMemory(prev => ({
@@ -132,6 +138,38 @@ function SwarmInterface() {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [memory.logs.length]);
+
+  // IMU Motion Detection (Variable Polling)
+  useEffect(() => {
+    const handleOrientation = (event) => {
+      if (event.alpha === null) return;
+      const { alpha, beta, gamma } = event;
+      const last = lastOrientationRef.current;
+      const move = Math.abs(alpha - last.alpha) + Math.abs(beta - last.beta) + Math.abs(gamma - last.gamma);
+
+      if (move > 10) { // Device is panning
+        lastMotionRef.current = Date.now();
+        setIsMoving(true);
+        lastOrientationRef.current = { alpha, beta, gamma };
+      } else if (Date.now() - lastMotionRef.current > 3000) {
+        // Still for 3 seconds
+        setIsMoving(false);
+      }
+    };
+
+    // Start listening to IMU
+    window.addEventListener('deviceorientation', handleOrientation);
+
+    // Fallback Mock for Desktop Dev (Since IMU might be null): Toggle motion every 15s to demo
+    const mockInterval = setInterval(() => {
+      setIsMoving(prev => !prev);
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      clearInterval(mockInterval);
+    };
+  }, []);
 
   // Initialize Camera
   useEffect(() => {
@@ -181,6 +219,13 @@ function SwarmInterface() {
 
     const pingScout = async () => {
       if (isProcessing) return;
+
+      // Variable API Polling logic!
+      if (!isMoving) {
+        setMemory(prev => ({ ...prev, state: "STATIONARY: Polling halted to save API cost." }));
+        return; // Don't process if still
+      }
+
       isProcessing = true;
       setActiveAgent('scout');
 
@@ -288,7 +333,10 @@ function SwarmInterface() {
                 RESPOND STRICTLY IN JSON format:
                 {
                   "instruction": "Your human-like answer here",
-                  "ar_direction": "FORWARD" // MUST BE EXACTLY ONE OF: FORWARD, LEFT, RIGHT, TURN_AROUND, ARRIVED, or NONE
+                  "ar_direction": "FORWARD", // MUST BE EXACTLY ONE OF: FORWARD, LEFT, RIGHT, TURN_AROUND, ARRIVED, or NONE
+                  "target_identified": true, // false if not visible
+                  "target_label": "Exit Sign", // null if not visible
+                  "target_bounding_box": [ymin, xmin, ymax, xmax] // Values 0 to 1000 if visible, exactly wrapping the object. Null if not visible.
                 }`
               }
             ]
@@ -304,6 +352,17 @@ function SwarmInterface() {
       const direction = data.ar_direction || "NONE";
 
       setActiveDirection(direction);
+
+      // Update Bounding Box Overlays
+      if (data.target_identified && data.target_bounding_box) {
+        setActiveTargets([{
+          label: data.target_label || "TARGET",
+          box: data.target_bounding_box
+        }]);
+      } else {
+        setActiveTargets([]);
+      }
+
       addLog(`Coordinator: ${answer}`, "success");
       setMemory(prev => ({ ...prev, state: `AR HUD POINTING: ${direction}` }));
 
@@ -383,9 +442,11 @@ function SwarmInterface() {
           <div className="glass-panel px-5 py-2.5 rounded-sm flex items-center gap-4 data-sweep box-border border-l-2 border-l-[#3898ec]">
             <BrainCircuit className={`w-5 h-5 ${isScouting ? 'text-[#3898ec] animate-pulse' : 'text-neutral-600'}`} />
             <div className="flex flex-col">
-              <span className="text-[10px] text-neutral-400 font-mono tracking-widest uppercase leading-none mb-1">System State</span>
+              <span className="text-[10px] text-neutral-400 font-mono tracking-widest uppercase leading-none mb-1 flex items-center gap-2">
+                System State {isScouting && <span className={`w-2 h-2 rounded-full ${isMoving ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} title={isMoving ? "Motion Detected" : "Stationary (Saving API cost)"} />}
+              </span>
               <span className="text-xs font-bold tracking-widest text-neutral-100 uppercase leading-none">
-                {isScouting ? 'SWARM UPLINK ESTABLISHED' : 'SYSTEM STANDBY'}
+                {isScouting ? (isMoving ? 'SWARM UPLINK ESTABLISHED' : 'STATIONARY MODE (POLLING PAUSED)') : 'SYSTEM STANDBY'}
               </span>
             </div>
           </div>
@@ -427,6 +488,35 @@ function SwarmInterface() {
 
           {/* AR Direction Overlay HUD */}
           <ARDirectionOverlay direction={activeDirection} />
+
+          {/* AR Bounding Box Tracker */}
+          {activeTargets.map((target, idx) => {
+            const [ymin, xmin, ymax, xmax] = target.box;
+            const top = `${(ymin / 1000) * 100}%`;
+            const left = `${(xmin / 1000) * 100}%`;
+            const height = `${((ymax - ymin) / 1000) * 100}%`;
+            const width = `${((xmax - xmin) / 1000) * 100}%`;
+
+            return (
+              <div
+                key={idx}
+                className="absolute border-2 border-[#3898ec] bg-[#3898ec]/10 shadow-[0_0_20px_rgba(56,152,236,0.5)] transition-all duration-700 ease-in-out pointer-events-none z-30 flex flex-col justify-start items-start"
+                style={{ top, left, width, height }}
+              >
+                {/* Reticle Corners */}
+                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-white -translate-x-[2px] -translate-y-[2px]" />
+                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-white translate-x-[2px] -translate-y-[2px]" />
+                <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-white -translate-x-[2px] translate-y-[2px]" />
+                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-white translate-x-[2px] translate-y-[2px]" />
+
+                {/* Target Label */}
+                <div className="absolute -top-7 left-0 bg-[#3898ec] text-white text-[10px] font-mono tracking-widest px-2 py-1 flex items-center gap-1 uppercase whitespace-nowrap box-border shadow-lg">
+                  <Crosshair className="w-3 h-3 animate-spin duration-[3000ms]" />
+                  [LOCK-ON] {target.label}
+                </div>
+              </div>
+            );
+          })}
 
         </div>
 
