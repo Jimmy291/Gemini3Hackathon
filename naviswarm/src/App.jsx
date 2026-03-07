@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 // ------------------------------------------------------------------
 // API KEY CONFIGURATION
 // Paste your Gemini API key directly here.
-const API_KEY = "AIzaSyAl7iJv_mcARsmJtE10CpbRVrznftLWIYg";
+const API_KEY = "AIzaSyAVnPhtjCGYDQP1Pjpj7bQOv-z5eDY_Uqg";
 // ------------------------------------------------------------------
 
 export default function App() {
@@ -126,6 +126,7 @@ function SwarmInterface() {
   const [userQuery, setUserQuery] = useState('');
   const [activeDirection, setActiveDirection] = useState('NONE');
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeTargets, setActiveTargets] = useState([]); // [{ label, box: [y1, x1, y2, x2] }]
   const [isMoving, setIsMoving] = useState(true);
   const [activeSubtitle, setActiveSubtitle] = useState('');
@@ -163,21 +164,24 @@ function SwarmInterface() {
   const speakNaturalTone = (text) => {
     if (!text || text.trim() === '') return;
 
-    // Direct Web Speech API Synthesis (Fallback)
     if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Stop any previous speech
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.05; // Slightly faster for techy feel
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
 
       const voices = window.speechSynthesis.getVoices();
-      const premiumVoice = voices.find(v =>
-        v.name.includes('Google') ||
-        v.name.includes('Samantha') ||
-        v.name.includes('Premium') ||
-        v.name.includes('Daniel')
-      );
-      if (premiumVoice) utterance.voice = premiumVoice;
+      // Prioritize Samantha for that Siri feel on Mac
+      const siriVoice = voices.find(v => v.name.includes('Samantha')) ||
+        voices.find(v => v.name.includes('Google')) ||
+        voices.find(v => v.name.includes('Premium')) ||
+        voices.find(v => v.name.includes('Daniel'));
 
-      // Start subtitle sync based on approximate reading duration
+      if (siriVoice) utterance.voice = siriVoice;
+
       const durationMs = (text.split(' ').length / 2.5) * 1000;
       startSubtitleSync(text, durationMs);
 
@@ -339,12 +343,13 @@ function SwarmInterface() {
         }
       } catch (err) {
         console.error("Scout error:", err);
+        addLog(`Scout Error: ${err.message || 'Check Console'}`, "error");
       }
 
       setTimeout(() => { isProcessing = false; }, 2000);
     };
 
-    intervalId = setInterval(pingScout, 4000); // Ping every 4 seconds
+    intervalId = setInterval(pingScout, 2500); // Increased frequency for "Live" feel
     return () => clearInterval(intervalId);
   }, [isScouting, isMoving]);
 
@@ -457,8 +462,9 @@ function SwarmInterface() {
       setMemory(prev => ({ ...prev, lastAnswer: finalMsg }));
 
     } catch (err) {
-      console.error(err);
-      addLog(`Coordinator Error: ${err.message}`, "error");
+      console.error("Gemini Swarm Error:", err);
+      const detail = err.message || JSON.stringify(err);
+      addLog(`Coordinator Error: ${detail.substring(0, 100)}...`, "error");
     }
   };
 
@@ -562,7 +568,7 @@ function SwarmInterface() {
           </button>
         </div>
 
-        {/* Center Target AR HUD */}
+
         <div className="flex-1 flex items-center justify-center relative pointer-events-none">
 
           {/* Subtle Central Reticle when not directing */}
@@ -575,6 +581,15 @@ function SwarmInterface() {
           {/* Massive AR Direction Overlay HUD */}
           <ARDirectionOverlay direction={activeDirection} instruction={memory.lastAnswer} />
 
+          {/* Gemini Live Visual Orb */}
+          {(isListening || isSpeaking) && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-all duration-700">
+              <div className={`w-48 h-48 rounded-full blur-3xl ${isListening ? 'orb-listening' : 'orb-glow'}`} />
+              <div className="absolute text-white/40 text-xs font-black tracking-widest uppercase animate-pulse">
+                {isListening ? "Listening..." : "Processing..."}
+              </div>
+            </div>
+          )}
           {/* AR Bounding Box Tracker - Refined */}
           {activeTargets.map((target, idx) => {
             const [ymin, xmin, ymax, xmax] = target.box;
@@ -639,6 +654,38 @@ function SwarmInterface() {
               >
                 <Mic className="w-6 h-6" strokeWidth={isListening ? 3 : 2} />
               </button>
+            </div>
+
+            {/* Compact Console Overlay (Under input) */}
+            <div className="mt-4 flex flex-col gap-2 pointer-events-none">
+              <div className="flex items-center gap-2 px-3">
+                <Activity className="w-3 h-3 text-[#3898ec] animate-pulse" />
+                <span className="text-[9px] font-black tracking-[0.2em] text-[#3898ec]/80 uppercase">Telemetry Feed</span>
+              </div>
+              <div className="w-full glass-panel rounded-xl border border-white/5 overflow-hidden max-h-24 pointer-events-auto shadow-2xl">
+                <div className="overflow-y-auto p-2 max-h-24 custom-scrollbar">
+                  <div className="space-y-1">
+                    {!memory.logs || memory.logs.length === 0 ? (
+                      <div className="text-[9px] text-zinc-500 font-mono italic px-2">Awaiting telemetry...</div>
+                    ) : (
+                      memory.logs.map((log, i) => (
+                        <div key={i} className={`flex items-start gap-3 py-1 px-2 rounded-md transition-all duration-300 ${log.type === 'success' ? 'bg-green-500/5' :
+                          log.type === 'warning' ? 'bg-yellow-500/5' :
+                            log.type === 'error' ? 'bg-red-500/5' : 'bg-blue-500/10'
+                          }`}>
+                          <div className={`w-1 h-1 rounded-full mt-1.5 shrink-0 ${log.type === 'success' ? 'bg-green-400' :
+                            log.type === 'warning' ? 'bg-yellow-400' :
+                              log.type === 'error' ? 'bg-red-400' : 'bg-[#3898ec]'
+                            }`} />
+                          <p className="text-[9px] text-white/70 font-mono leading-tight flex-1 min-w-0 break-words">{log.msg}</p>
+                          <span className="text-[7px] text-white/20 font-mono shrink-0">{log.time}</span>
+                        </div>
+                      ))
+                    )}
+                    <div ref={logsEndRef} />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
