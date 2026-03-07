@@ -6,7 +6,7 @@ import { AudioRecorder, AudioPlayer } from './lib/audio-utils.js';
 // ------------------------------------------------------------------
 // API KEY CONFIGURATION
 // Paste your Gemini API key directly here.
-const API_KEY = "AIzaSyAVnPhtjCGYDQP1Pjpj7bQOv-z5eDY_Uqg";
+const API_KEY = "AIzaSyAl7iJv_mcARsmJtE10CpbRVrznftLWIYg";
 // ------------------------------------------------------------------
 
 export default function App() {
@@ -49,21 +49,21 @@ function ARDirectionOverlay({ direction, instruction }) {
   if (!direction || direction === 'NONE') return null;
 
   const arrowProps = {
-    className: "w-64 h-64 text-white drop-shadow-[0_10px_30px_rgba(56,152,236,1)] animate-[float_3s_ease-in-out_infinite]",
+    className: "w-64 h-64 text-white drop-shadow-[0_15px_40px_rgba(56,152,236,1)] ar-float",
     strokeWidth: 2.5
   };
 
   return (
-    <div className="absolute top-[15%] left-0 w-full flex flex-col items-center justify-center z-20 pointer-events-none">
-      <div className="flex flex-col items-center justify-center gap-6">
+    <div className="absolute top-[12%] left-0 w-full flex flex-col items-center justify-center z-20 pointer-events-none">
+      <div className="flex flex-col items-center justify-center gap-10">
         {direction === 'FORWARD' && <ChevronsUp {...arrowProps} />}
         {direction === 'LEFT' && <ChevronsLeft {...arrowProps} />}
         {direction === 'RIGHT' && <ChevronsRight {...arrowProps} />}
         {direction === 'TURN_AROUND' && <RotateCcw {...arrowProps} />}
-        {direction === 'ARRIVED' && <CheckCircle className="w-64 h-64 text-green-400 drop-shadow-[0_10px_30px_rgba(74,222,128,0.8)] animate-[pulse_1.5s_ease-in-out_infinite]" strokeWidth={2.5} />}
+        {direction === 'ARRIVED' && <CheckCircle className="w-64 h-64 text-green-400 drop-shadow-[0_15px_40px_rgba(74,222,128,0.8)] animate-[pulse_1.5s_ease-in-out_infinite]" strokeWidth={2.5} />}
 
-        <div className="bg-black/40 backdrop-blur-xl px-10 py-4 rounded-full border border-white/20 shadow-2xl">
-          <span className="text-4xl font-black tracking-widest text-white uppercase text-center block">
+        <div className="bg-black/60 backdrop-blur-2xl px-12 py-5 rounded-3xl border border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+          <span className="text-5xl font-black tracking-[0.2em] text-[#3898ec] animate-pulse uppercase text-center block">
             {direction.replace('_', ' ')}
           </span>
         </div>
@@ -411,14 +411,17 @@ function SwarmInterface() {
 
                 INSTRUCTIONS:
                 1. Provide a human-like, conversational response (1-2 sentences).
-                2. If the goal is in the live image, guide them to it.
-                3. If it's in the memory database, tell them how to get there.
+                2. If the goal is not visible in the LIVE view but is in memory, identify a visible landmark from the LIVE view that leads towards it.
+                3. Direct the user towards that visible landmark as a sub-goal (e.g., "The toilet is past the sofa, please move towards the sofa").
+                4. If no visible landmarks lead to the goal, provide general directions from memory.
+                5. ALWAYS return the TARGET_LABEL and TARGET_BOX for the landmark you are currently using as a waypoint if it is visible in the LIVE view.
 
                 YOU MUST STRICTLY USE THIS EXACT MULTI-LINE FORMAT (Do not use JSON or Markdown):
+                THOUGHT: <Analyze where the goal is relative to visible landmarks and explain your reasoning steps>
                 MESSAGE: <Your conversational text>
                 DIRECTION: <FORWARD|LEFT|RIGHT|TURN_AROUND|ARRIVED|NONE>
-                TARGET_LABEL: <Target Name or NONE>
-                TARGET_BOX: <ymin,xmin,ymax,xmax values 0-1000 or NONE>
+                TARGET_LABEL: <The name of the visible landmark/waypoint or NONE>
+                TARGET_BOX: <ymin,xmin,ymax,xmax values 0-1000 for the visible TARGET_LABEL or NONE>
                 `
               }
             ]
@@ -429,10 +432,20 @@ function SwarmInterface() {
       let fullResponseString = '';
       let spokenMessage = '';
       let sentenceBuffer = '';
+      let thoughtLogged = false;
 
       for await (const chunk of responseStream) {
         const chunkText = chunk.text;
         fullResponseString += chunkText;
+
+        // Extract and log THOUGHT as soon as it's available
+        if (!thoughtLogged) {
+          const thoughtMatch = fullResponseString.match(/THOUGHT:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
+          if (thoughtMatch && thoughtMatch[1].trim() !== '') {
+            addLog(`Logic Trace: ${thoughtMatch[1].trim()}`, "info");
+            thoughtLogged = true;
+          }
+        }
 
         const msgMatch = fullResponseString.match(/MESSAGE:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
         if (msgMatch) {
@@ -461,7 +474,7 @@ function SwarmInterface() {
 
       // Metadata parsing
       const dirMatch = fullResponseString.match(/DIRECTION:\s*([A-Za-z_]+)/);
-      const labelMatch = fullResponseString.match(/TARGET_LABEL:\s*(.*)/);
+      const labelMatch = fullResponseString.match(/TARGET_LABEL:\s*(.*?)(?=\n[A-Z_]+:|$)/s);
       const boxMatch = fullResponseString.match(/TARGET_BOX:\s*([0-9,]+)/);
 
       const direction = dirMatch ? dirMatch[1].trim() : 'NONE';
@@ -517,13 +530,18 @@ function SwarmInterface() {
     setIsListening(true);
 
     try {
-      const ai = new GoogleGenAI(API_KEY);
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
       // specific live model name from docs
-      const model = 'gemini-2.5-flash-native-audio-preview-12-2025';
+      const model = 'gemini-2.0-flash-exp';
 
       const config = {
         responseModalities: ["audio"],
-        systemInstruction: "You are the NaviSwarm LIVE Coordinator. Answer based on vision and spatial memory. Be concise. Guide the user in real-time.",
+        systemInstruction: `You are the NaviSwarm LIVE Coordinator. 
+        Your goal is to guide the user in real-time. 
+        Use the spatial memory database provided below to think about where things are.
+        If the user asks for a location not visible, identify visible landmarks to use as waypoints.
+        
+        Spatial Memory Database: ${JSON.stringify({ landmarks: memory.landmarks, hazards: memory.hazards })}`,
       };
 
       const session = await ai.live.connect({
@@ -698,11 +716,17 @@ function SwarmInterface() {
             return (
               <div
                 key={idx}
-                className="absolute border-4 border-[#3898ec]/80 bg-[#3898ec]/10 shadow-[0_0_30px_rgba(56,152,236,0.3)] rounded-2xl transition-all duration-500 ease-out pointer-events-none z-30"
+                className="absolute border-2 border-[#3898ec] bg-[#3898ec]/5 shadow-[0_0_40px_rgba(56,152,236,0.4)] rounded-xl transition-all duration-700 ease-out pointer-events-none z-30 overflow-hidden"
                 style={{ top, left, width, height }}
               >
+                {/* Real-time Target Scanner Bar */}
+                <div className="target-scanner" />
+
+                {/* Pulsating Waypoint Ring */}
+                <div className="waypoint-ring" />
+
                 {/* Clean Target Pill */}
-                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-2xl border border-white/10 text-white text-base font-bold px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl whitespace-nowrap">
+                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-2xl border border-[#3898ec]/30 text-white text-base font-bold px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl whitespace-nowrap">
                   <Crosshair className="w-5 h-5 text-[#3898ec] animate-[spin_4s_linear_infinite]" />
                   {target.label}
                 </div>
